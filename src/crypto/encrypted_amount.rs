@@ -112,4 +112,26 @@ impl EncryptedAmount {
     pub fn public_key(&self) -> &TwistedEd25519PublicKey {
         &self.public_key
     }
+
+    /// Rebuild an encrypted amount from existing ciphertext limbs (e.g. TS-generated fixtures).
+    ///
+    /// Chunk plaintext values are set to zero; sigma **verification** only uses curve points from
+    /// `ciphertext`, not these placeholders.
+    pub fn from_ciphertext_vec_for_verification(
+        ciphertext: Vec<TwistedElGamalCiphertext>,
+        public_key: TwistedEd25519PublicKey,
+    ) -> Result<Self, String> {
+        let n = ciphertext.len();
+        if n == 0 {
+            return Err("empty ciphertext".into());
+        }
+        let chunked_amount = ChunkedAmount::from_raw_chunks(vec![0u64; n]);
+        let randomness = vec![Scalar::ZERO; n];
+        Ok(Self {
+            chunked_amount,
+            ciphertext,
+            public_key,
+            randomness,
+        })
+    }
 }

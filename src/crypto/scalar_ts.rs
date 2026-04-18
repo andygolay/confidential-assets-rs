@@ -53,11 +53,7 @@ pub fn sub_mod_l(a: &Scalar, b: &Scalar) -> Scalar {
     let l = group_order();
     let ai = scalar_to_biguint(a);
     let bi = scalar_to_biguint(b);
-    let diff = if ai >= bi {
-        ai - bi
-    } else {
-        &l - (bi - ai)
-    };
+    let diff = if ai >= bi { ai - bi } else { &l - (bi - ai) };
     biguint_to_scalar(&(diff % &l))
 }
 
@@ -101,9 +97,7 @@ pub fn fix_alpha_limbs_weighted_lincomb(
     let l_k = lin_comb_pow2_mod_l(k, chunk_bits);
     let l_w = lin_comb_pow2_mod_l(w, chunk_bits);
     let l_tar = sub_mod_l(&l_k, &mul_mod_l(p, &l_w));
-    let mut out: Vec<Scalar> = (0..n - 1)
-        .map(|i| sub_mul_mod_l(&k[i], p, &w[i]))
-        .collect();
+    let mut out: Vec<Scalar> = (0..n - 1).map(|i| sub_mul_mod_l(&k[i], p, &w[i])).collect();
     let acc = lin_comb_pow2_mod_l(&out, chunk_bits);
     let diff = sub_mod_l(&l_tar, &acc);
     let w_last = scalar_pow2_mod_l(chunk_bits * (n - 1) as u32);

@@ -54,7 +54,11 @@ pub fn get_pending_balance_cache_key(address: &str, token_address: &str, network
     format!("{address}-pending-encrypted-balance-for-{token_address}-{network}")
 }
 
-pub fn get_available_balance_cache_key(address: &str, token_address: &str, network: &str) -> String {
+pub fn get_available_balance_cache_key(
+    address: &str,
+    token_address: &str,
+    network: &str,
+) -> String {
     format!("{address}-available-encrypted-balance-for-{token_address}-{network}")
 }
 
@@ -64,13 +68,25 @@ pub fn get_encryption_key_cache_key(address: &str, token_address: &str, network:
 
 /// Clear pending + available balance cache entries for an account/token/network.
 pub fn clear_balance_cache(address: &str, token_address: &str, network: &str) {
-    clear_cache(&get_pending_balance_cache_key(address, token_address, network));
-    clear_cache(&get_available_balance_cache_key(address, token_address, network));
+    clear_cache(&get_pending_balance_cache_key(
+        address,
+        token_address,
+        network,
+    ));
+    clear_cache(&get_available_balance_cache_key(
+        address,
+        token_address,
+        network,
+    ));
 }
 
 /// Clear encryption key cache for an account/token/network.
 pub fn clear_encryption_key_cache(address: &str, token_address: &str, network: &str) {
-    clear_cache(&get_encryption_key_cache_key(address, token_address, network));
+    clear_cache(&get_encryption_key_cache_key(
+        address,
+        token_address,
+        network,
+    ));
 }
 
 /// Memoize a synchronous function (TS `memoize`): first call runs `func` and caches under `key`.

@@ -18,6 +18,9 @@
 .DS_Store
 Thumbs.db
 
+# TS fixture generator (see fixtures/ts/README.md)
+fixtures/ts/node_modules/
+
 # Debugging / profiling
 *.dSYM/
 *.pdb

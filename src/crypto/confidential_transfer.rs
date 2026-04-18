@@ -4,7 +4,9 @@
 //! Confidential transfer sigma proofs — aligned with `ts-sdk/confidential-assets` / Move layout.
 
 use crate::bcs::bcs_serialize_move_vector_u8;
-use crate::consts::{MAX_SENDER_AUDITOR_HINT_BYTES, PROTOCOL_ID_TRANSFER, SIGMA_PROOF_TRANSFER_SIZE};
+use crate::consts::{
+    MAX_SENDER_AUDITOR_HINT_BYTES, PROTOCOL_ID_TRANSFER, SIGMA_PROOF_TRANSFER_SIZE,
+};
 use crate::crypto::chunked_amount::{
     ChunkedAmount, AVAILABLE_BALANCE_CHUNK_COUNT, CHUNK_BITS, MAX_CONFIDENTIAL_TRANSFER_PLAINTEXT,
     TRANSFER_AMOUNT_CHUNK_COUNT,
@@ -13,7 +15,8 @@ use crate::crypto::encrypted_amount::EncryptedAmount;
 use crate::crypto::fiat_shamir::fiat_shamir_challenge_ts;
 use crate::crypto::h_ristretto;
 use crate::crypto::scalar_ts::{
-    fix_alpha_limbs_weighted_lincomb, lin_comb_pow2_mod_l, scalar_pow2_mod_l, sub_mod_l, sub_mul_mod_l,
+    fix_alpha_limbs_weighted_lincomb, lin_comb_pow2_mod_l, scalar_pow2_mod_l, sub_mod_l,
+    sub_mul_mod_l,
 };
 use crate::crypto::twisted_ed25519::{TwistedEd25519PrivateKey, TwistedEd25519PublicKey};
 use crate::crypto::twisted_el_gamal::TwistedElGamalCiphertext;
@@ -39,17 +42,21 @@ fn decompress(p: &[u8; 32]) -> RistrettoPoint {
 }
 
 fn sum_d_weighted(cts: &[TwistedElGamalCiphertext]) -> RistrettoPoint {
-    cts.iter().enumerate().fold(RistrettoPoint::identity(), |acc, (i, ct)| {
-        let coef = scalar_pow2_mod_l(CHUNK_BITS * i as u32);
-        acc + ct.d * coef
-    })
+    cts.iter()
+        .enumerate()
+        .fold(RistrettoPoint::identity(), |acc, (i, ct)| {
+            let coef = scalar_pow2_mod_l(CHUNK_BITS * i as u32);
+            acc + ct.d * coef
+        })
 }
 
 fn sum_c_weighted(cts: &[TwistedElGamalCiphertext]) -> RistrettoPoint {
-    cts.iter().enumerate().fold(RistrettoPoint::identity(), |acc, (i, ct)| {
-        let coef = scalar_pow2_mod_l(CHUNK_BITS * i as u32);
-        acc + ct.c * coef
-    })
+    cts.iter()
+        .enumerate()
+        .fold(RistrettoPoint::identity(), |acc, (i, ct)| {
+            let coef = scalar_pow2_mod_l(CHUNK_BITS * i as u32);
+            acc + ct.c * coef
+        })
 }
 
 /// Transfer sigma proof (TS `ConfidentialTransferSigmaProof`): scalars as 32-byte LE, points as compressed.
@@ -139,11 +146,8 @@ impl ConfidentialTransfer {
 
         let new_rnd = ed25519_gen_list_of_random(AVAILABLE_BALANCE_CHUNK_COUNT);
         let new_chunked = ChunkedAmount::from_amount(new_balance);
-        let new_ea = EncryptedAmount::new_with_randomness(
-            new_chunked,
-            sender_pk.clone(),
-            new_rnd.clone(),
-        )?;
+        let new_ea =
+            EncryptedAmount::new_with_randomness(new_chunked, sender_pk.clone(), new_rnd.clone())?;
 
         let transfer_rnd = ed25519_gen_list_of_random(AVAILABLE_BALANCE_CHUNK_COUNT);
         let transfer_chunked = ChunkedAmount::from_transfer_amount(amount);
@@ -252,9 +256,7 @@ impl ConfidentialTransfer {
             .sender_encrypted_available_balance_after_transfer
             .get_ciphertext();
 
-        let x1_pt = RISTRETTO_BASEPOINT_POINT * x1_sum
-            + h * h_coeff
-            + sum_d_weighted(old_bal) * x2
+        let x1_pt = RISTRETTO_BASEPOINT_POINT * x1_sum + h * h_coeff + sum_d_weighted(old_bal) * x2
             - sum_d_weighted(new_bal) * x2;
 
         let x2_list: Vec<[u8; 32]> = x6_list
@@ -309,7 +311,11 @@ impl ConfidentialTransfer {
         for aud in &self.auditor_encryption_keys {
             extra.extend_from_slice(&aud.to_bytes());
         }
-        extra.extend_from_slice(&self.sender_encrypted_available_balance.get_ciphertext_bytes());
+        extra.extend_from_slice(
+            &self
+                .sender_encrypted_available_balance
+                .get_ciphertext_bytes(),
+        );
         extra.extend_from_slice(
             &self
                 .transfer_amount_encrypted_by_recipient
@@ -367,7 +373,8 @@ impl ConfidentialTransfer {
             .chunked_amount()
             .chunks();
         let bal_scalars: Vec<Scalar> = bal_after_chunks.iter().map(|&c| Scalar::from(c)).collect();
-        let alpha1_scalars = fix_alpha_limbs_weighted_lincomb(&x1_list, &p, &bal_scalars, CHUNK_BITS);
+        let alpha1_scalars =
+            fix_alpha_limbs_weighted_lincomb(&x1_list, &p, &bal_scalars, CHUNK_BITS);
         let alpha1_list: Vec<[u8; 32]> = alpha1_scalars.iter().map(|s| s.to_bytes()).collect();
 
         let alpha2 = sub_mul_mod_l(&x2, &p, s_le).to_bytes();
@@ -385,7 +392,8 @@ impl ConfidentialTransfer {
             .chunked_amount()
             .chunks();
         let amt_scalars: Vec<Scalar> = amt_chunks.iter().map(|&c| Scalar::from(c)).collect();
-        let alpha4_scalars = fix_alpha_limbs_weighted_lincomb(&x4_list[..j], &p, &amt_scalars, CHUNK_BITS);
+        let alpha4_scalars =
+            fix_alpha_limbs_weighted_lincomb(&x4_list[..j], &p, &amt_scalars, CHUNK_BITS);
         let alpha4_list: Vec<[u8; 32]> = alpha4_scalars.iter().map(|s| s.to_bytes()).collect();
 
         let alpha5 = sub_mul_mod_l(&x5, &p, &invert_s).to_bytes();
@@ -460,7 +468,11 @@ impl ConfidentialTransfer {
         for ct in old_ct {
             extra.extend_from_slice(&ct.to_bytes());
         }
-        extra.extend_from_slice(&opts.encrypted_transfer_amount_by_recipient.get_ciphertext_bytes());
+        extra.extend_from_slice(
+            &opts
+                .encrypted_transfer_amount_by_recipient
+                .get_ciphertext_bytes(),
+        );
         if let Some(ref aud) = opts.auditors {
             for row in &aud.auditors_cb_list {
                 for ct in row {
@@ -507,7 +519,11 @@ impl ConfidentialTransfer {
             &[&extra],
         );
 
-        let a1: Vec<Scalar> = proof.alpha1_list.iter().map(|b| Scalar::from_bytes_mod_order(*b)).collect();
+        let a1: Vec<Scalar> = proof
+            .alpha1_list
+            .iter()
+            .map(|b| Scalar::from_bytes_mod_order(*b))
+            .collect();
         let a2 = Scalar::from_bytes_mod_order(proof.alpha2);
         let a3: Vec<Scalar> = proof
             .alpha3_list
@@ -530,17 +546,20 @@ impl ConfidentialTransfer {
 
         let old_d_sum = sum_d_weighted(old_ct);
         let old_c_sum = sum_c_weighted(old_ct);
-        let new_ct = opts.encrypted_actual_balance_after_transfer.get_ciphertext();
+        let new_ct = opts
+            .encrypted_actual_balance_after_transfer
+            .get_ciphertext();
         let new_d_sum = sum_d_weighted(new_ct);
 
         let rec_ct = opts.encrypted_transfer_amount_by_recipient.get_ciphertext();
-        let amount_c_sum = rec_ct[..j].iter().enumerate().fold(
-            RistrettoPoint::identity(),
-            |acc, (idx, ct)| {
-                let coef = scalar_pow2_mod_l(CHUNK_BITS * idx as u32);
-                acc + ct.c * coef
-            },
-        );
+        let amount_c_sum =
+            rec_ct[..j]
+                .iter()
+                .enumerate()
+                .fold(RistrettoPoint::identity(), |acc, (idx, ct)| {
+                    let coef = scalar_pow2_mod_l(CHUNK_BITS * idx as u32);
+                    acc + ct.c * coef
+                });
 
         let verify_h = sub_mod_l(
             &lin_comb_pow2_mod_l(&a6, CHUNK_BITS),
@@ -557,31 +576,23 @@ impl ConfidentialTransfer {
         let x2_list: Vec<RistrettoPoint> = a6
             .iter()
             .enumerate()
-            .map(|(idx, el)| {
-                sender_ristretto * el + new_ct[idx].d * p
-            })
+            .map(|(idx, el)| sender_ristretto * el + new_ct[idx].d * p)
             .collect();
         let x3_list: Vec<RistrettoPoint> = a3[..j]
             .iter()
             .enumerate()
-            .map(|(idx, a3s)| {
-                recipient_ristretto * a3s + rec_ct[idx].d * p
-            })
+            .map(|(idx, a3s)| recipient_ristretto * a3s + rec_ct[idx].d * p)
             .collect();
         let x4_list: Vec<RistrettoPoint> = a4[..j]
             .iter()
             .enumerate()
-            .map(|(idx, a4s)| {
-                RISTRETTO_BASEPOINT_POINT * a4s + h * a3[idx] + rec_ct[idx].c * p
-            })
+            .map(|(idx, a4s)| RISTRETTO_BASEPOINT_POINT * a4s + h * a3[idx] + rec_ct[idx].c * p)
             .collect();
         let x5_re = h * a5 + sender_ristretto * p;
         let x6_list: Vec<RistrettoPoint> = a1
             .iter()
             .enumerate()
-            .map(|(idx, a1s)| {
-                RISTRETTO_BASEPOINT_POINT * a1s + h * a6[idx] + new_ct[idx].c * p
-            })
+            .map(|(idx, a1s)| RISTRETTO_BASEPOINT_POINT * a1s + h * a6[idx] + new_ct[idx].c * p)
             .collect();
 
         let mut ok = x1_re == decompress(&proof.x1);
@@ -770,9 +781,12 @@ impl ConfidentialTransfer {
         Ok((
             sigma,
             range,
-            self.sender_encrypted_available_balance_after_transfer.clone(),
+            self.sender_encrypted_available_balance_after_transfer
+                .clone(),
             self.transfer_amount_encrypted_by_recipient.clone(),
-            self.transfer_amount_encrypted_by_auditors.clone().unwrap_or_default(),
+            self.transfer_amount_encrypted_by_auditors
+                .clone()
+                .unwrap_or_default(),
         ))
     }
 }
@@ -786,9 +800,7 @@ fn x8_list_verify(
     let j = TRANSFER_AMOUNT_CHUNK_COUNT;
     let s_ct = opts.encrypted_transfer_amount_by_sender.get_ciphertext();
     (0..j)
-        .map(|i| {
-            sender_ristretto * a3[i] + s_ct[i].d * p
-        })
+        .map(|i| sender_ristretto * a3[i] + s_ct[i].d * p)
         .collect()
 }
 

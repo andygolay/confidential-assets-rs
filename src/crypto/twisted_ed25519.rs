@@ -1,5 +1,6 @@
 // Copyright © Move Industries
 // SPDX-License-Identifier: Apache-2.0
+use super::h_ristretto;
 use crate::utils::ed25519_gen_random;
 use curve25519_dalek::ristretto::RistrettoPoint;
 use curve25519_dalek::scalar::Scalar;
@@ -34,9 +35,13 @@ impl TwistedEd25519PrivateKey {
         Self { scalar }
     }
     /// Get the corresponding public key.
+    ///
+    /// Matches Movement TS: `pk = s⁻¹ · H` with fixed `H` (`h_ristretto` / `HASH_BASE_POINT`),
+    /// not `s · G`.
     pub fn public_key(&self) -> TwistedEd25519PublicKey {
+        let inv = self.scalar.invert();
         TwistedEd25519PublicKey {
-            point: &self.scalar * curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT,
+            point: h_ristretto() * inv,
         }
     }
     /// Get the raw scalar reference.
