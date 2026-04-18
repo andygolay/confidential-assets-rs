@@ -6,11 +6,15 @@ use rand::Rng;
 
 fn generate_random_integer(bits: u32) -> u128 {
     let mut rng = rand::thread_rng();
-    let max: u128 = (1u128 << bits) - 1;
-    // For bits > 128, we'd need BigUint; for now limit to 128
+    // `1u128 << bits` is only valid for bits < 128; at 128 bits the range is all u128 values.
     if bits > 128 {
         panic!("generate_random_integer only supports up to 128 bits");
     }
+    let max = if bits == 128 {
+        u128::MAX
+    } else {
+        (1u128 << bits) - 1
+    };
     rng.gen_range(0..=max)
 }
 

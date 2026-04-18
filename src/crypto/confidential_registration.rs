@@ -84,14 +84,15 @@ pub fn verify_registration_proof(
         Some(s) => s,
         None => return false,
     };
-    // Recompute challenge
+    // Recompute challenge (must match `gen_registration_proof`: PK then commitment R)
+    let pk_bytes = pk.to_bytes();
     let c = fiat_shamir_challenge_full(
         PROTOCOL_ID_REGISTRATION,
         chain_id,
         sender_address,
         contract_address,
         token_address,
-        &[&proof.commitment, &pk.to_bytes()],
+        &[&pk_bytes, &proof.commitment],
     );
     // Verify: s * G + c * PK == R
     let lhs = s * RISTRETTO_BASEPOINT_POINT + c * pk.as_point();

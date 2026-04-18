@@ -1,0 +1,24 @@
+# Rust / Cargo
+/target/
+**/*.rs.bk
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# IDE / editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Debugging / profiling
+*.dSYM/
+*.pdb
+*.prof*

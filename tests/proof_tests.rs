@@ -10,6 +10,7 @@ use confidential_assets::crypto::confidential_transfer::ConfidentialTransfer;
 use confidential_assets::crypto::confidential_withdraw::ConfidentialWithdraw;
 use confidential_assets::crypto::encrypted_amount::EncryptedAmount;
 use confidential_assets::crypto::twisted_ed25519::TwistedEd25519PrivateKey;
+use confidential_assets::SIGMA_PROOF_TRANSFER_SIZE;
 
 const ALICE_BALANCE: u128 = 18446744073709551716u128;
 const TEST_CHAIN_ID: u8 = 1;
@@ -107,7 +108,7 @@ fn transfer_sigma_proof_serialize_deserialize_roundtrip_no_auditors() {
 
     let sigma = ct.gen_sigma_proof();
     let bytes = ConfidentialTransfer::serialize_sigma_proof(&sigma);
-    assert_eq!(bytes.len(), 56 * 32);
+    assert_eq!(bytes.len(), SIGMA_PROOF_TRANSFER_SIZE);
     let decoded =
         ConfidentialTransfer::deserialize_sigma_proof(&bytes).expect("deserialize should succeed");
     assert_eq!(decoded.alpha1_list.len(), 8);
