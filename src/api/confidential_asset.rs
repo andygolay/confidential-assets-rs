@@ -9,7 +9,6 @@
 //!
 //! TODO: Switch `aptos_sdk` types → `movement_sdk` types once the fork is ready.
 
-use crate::consts::DEFAULT_CONFIDENTIAL_COIN_MODULE_ADDRESS;
 use crate::crypto::{TwistedEd25519PrivateKey, TwistedEd25519PublicKey};
 use crate::internal::transaction_builder::ConfidentialAssetTransactionBuilder;
 use crate::internal::view_functions::{

@@ -1,12 +1,12 @@
 // Copyright © Move Industries
 // SPDX-License-Identifier: Apache-2.0
 use crate::consts::PROTOCOL_ID_WITHDRAWAL;
-use crate::crypto::chunked_amount::{ChunkedAmount, AVAILABLE_BALANCE_CHUNK_COUNT};
+use crate::crypto::chunked_amount::ChunkedAmount;
 use crate::crypto::encrypted_amount::EncryptedAmount;
 use crate::crypto::fiat_shamir::fiat_shamir_challenge_full;
 use crate::crypto::h_ristretto;
-use crate::crypto::twisted_ed25519::{TwistedEd25519PrivateKey, TwistedEd25519PublicKey};
-use crate::crypto::twisted_el_gamal::{TwistedElGamal, TwistedElGamalCiphertext};
+use crate::crypto::twisted_ed25519::TwistedEd25519PrivateKey;
+use crate::crypto::twisted_el_gamal::TwistedElGamalCiphertext;
 use crate::utils::ed25519_gen_random;
 use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
 use curve25519_dalek::ristretto::RistrettoPoint;
@@ -46,14 +46,14 @@ impl ConfidentialWithdraw {
     /// Create a new confidential withdrawal context.
     pub async fn create(
         decryption_key: TwistedEd25519PrivateKey,
-        sender_available_balance_cipher_text: &[TwistedElGamalCiphertext],
-        amount: u128,
-        chain_id: u8,
-        sender_address: &[u8],
-        contract_address: &[u8],
-        token_address: &[u8],
+        _sender_available_balance_cipher_text: &[TwistedElGamalCiphertext],
+        _amount: u128,
+        _chain_id: u8,
+        _sender_address: &[u8],
+        _contract_address: &[u8],
+        _token_address: &[u8],
     ) -> Result<Self, String> {
-        let pk = decryption_key.public_key();
+        let _pk = decryption_key.public_key();
         // Reconstruct the sender's encrypted available balance
         // We need to know the actual amounts for proof generation
         // In the TS SDK, this is done via the EncryptedAmount which stores both
@@ -73,8 +73,8 @@ impl ConfidentialWithdraw {
     pub fn create_with_balance(
         decryption_key: TwistedEd25519PrivateKey,
         sender_balance_amount: u128,
-        sender_balance_ciphertext: Vec<TwistedElGamalCiphertext>,
-        sender_balance_randomness: Vec<Scalar>,
+        _sender_balance_ciphertext: Vec<TwistedElGamalCiphertext>,
+        _sender_balance_randomness: Vec<Scalar>,
         amount: u128,
         chain_id: u8,
         sender_address: &[u8],
@@ -187,9 +187,9 @@ impl ConfidentialWithdraw {
     }
     /// Verify a withdrawal sigma proof.
     pub fn verify_sigma_proof(
-        sender_encrypted_balance: &EncryptedAmount,
-        sender_encrypted_balance_after: &EncryptedAmount,
-        amount: u128,
+        _sender_encrypted_balance: &EncryptedAmount,
+        _sender_encrypted_balance_after: &EncryptedAmount,
+        _amount: u128,
         proof: &WithdrawSigmaProof,
         chain_id: u8,
         sender_address: &[u8],
@@ -198,8 +198,8 @@ impl ConfidentialWithdraw {
     ) -> bool {
         // Verification logic: recompute commitments and check
         // This is a simplified placeholder — full verification mirrors the TS SDK logic.
-        let g = RISTRETTO_BASEPOINT_POINT;
-        let h = h_ristretto();
+        let _g = RISTRETTO_BASEPOINT_POINT;
+        let _h = h_ristretto();
         // Recompute Fiat-Shamir challenge
         let mut transcript_data: Vec<u8> = Vec::new();
         for alpha in &proof.alpha_list {
@@ -210,7 +210,7 @@ impl ConfidentialWithdraw {
         }
         transcript_data.extend_from_slice(&proof.a.compress().to_bytes());
         transcript_data.extend_from_slice(&proof.t.compress().to_bytes());
-        let c = fiat_shamir_challenge_full(
+        let _c = fiat_shamir_challenge_full(
             PROTOCOL_ID_WITHDRAWAL,
             chain_id,
             sender_address,

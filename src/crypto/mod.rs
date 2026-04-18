@@ -10,6 +10,7 @@ pub mod confidential_withdraw;
 pub mod encrypted_amount;
 pub mod fiat_shamir;
 pub mod range_proof;
+pub mod scalar_ts;
 pub mod twisted_ed25519;
 pub mod twisted_el_gamal;
 
@@ -21,11 +22,14 @@ pub use confidential_transfer::*;
 pub use confidential_withdraw::*;
 pub use encrypted_amount::*;
 pub use fiat_shamir::*;
+pub use scalar_ts::{
+    fix_alpha_limbs_weighted_lincomb, lin_comb_pow2_mod_l, mul_mod_l, scalar_pow2_mod_l, sub_mod_l,
+    sub_mul_mod_l,
+};
 pub use twisted_ed25519::*;
 pub use twisted_el_gamal::*;
 
 use curve25519_dalek::ristretto::RistrettoPoint;
-use curve25519_dalek::scalar::Scalar;
 
 /// The secondary generator H (used for amount commitments).
 /// This is a fixed RistrettoPoint derived from a domain-separated hash of "H_RISTRETTO".

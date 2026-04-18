@@ -13,9 +13,7 @@ pub fn ed25519_mod_n(a: &Scalar) -> Scalar {
 /// Clamp and reduce a 512-bit hash to a Ristretto scalar.
 /// Input bytes (64 bytes LE) → mod l.
 pub fn scalar_from_512_bits_le(bytes: &[u8; 64]) -> Scalar {
-    use curve25519_dalek::constants::BASEPOINT_ORDER;
-    let wide = Scalar::from_bytes_mod_order_wide(bytes);
-    wide
+    Scalar::from_bytes_mod_order_wide(bytes)
 }
 
 /// Generate a random scalar < l.

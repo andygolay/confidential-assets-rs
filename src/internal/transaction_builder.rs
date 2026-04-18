@@ -24,7 +24,7 @@ use crate::crypto::{
 };
 use aptos_sdk::{
     transaction::{EntryFunction, TransactionPayload},
-    types::{AccountAddress, Identifier, MoveModuleId, TypeTag},
+    types::{AccountAddress, Identifier, MoveModuleId},
     Aptos, AptosError,
 };
 

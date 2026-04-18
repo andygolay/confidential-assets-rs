@@ -235,7 +235,7 @@ fn deserialize_ciphertext_chunks(
     let mut ciphertexts = Vec::new();
     for chunk in bytes.chunks_exact(64) {
         use curve25519_dalek::ristretto::CompressedRistretto;
-        use curve25519_dalek::ristretto::RistrettoPoint;
+        
         let left = CompressedRistretto::from_slice(&chunk[..32])
             .map_err(|e| AptosError::Internal(format!("invalid left point: {}", e)))?
             .decompress()

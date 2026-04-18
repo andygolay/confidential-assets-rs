@@ -60,6 +60,39 @@ pub fn fiat_shamir_challenge_with_contract(
         &[],
     )
 }
+/// SHA512(utf8(dst) || concatenated `parts`), matching TS `dstHash(dst, ...data)` (no extra prefix).
+pub fn dst_hash_ts(dst: &str, parts: &[&[u8]]) -> [u8; 64] {
+    let mut hasher = Sha512::new();
+    hasher.update(dst.as_bytes());
+    for p in parts {
+        hasher.update(*p);
+    }
+    let result = hasher.finalize();
+    let mut out = [0u8; 64];
+    out.copy_from_slice(&result);
+    out
+}
+
+/// Matches TS `fiatShamirChallenge(protocolId, chainId, senderAddress, ...publicInputs)`:
+/// SHA512(utf8("MovementConfidentialAsset/" + protocolId) || chain_id || sender || public_inputs…).
+pub fn fiat_shamir_challenge_ts(
+    protocol_id: &str,
+    chain_id: u8,
+    sender_address: &[u8],
+    public_inputs: &[&[u8]],
+) -> Scalar {
+    let mut hasher = Sha512::new();
+    let dst = format!("MovementConfidentialAsset/{protocol_id}");
+    hasher.update(dst.as_bytes());
+    hasher.update(&[chain_id]);
+    hasher.update(sender_address);
+    for p in public_inputs {
+        hasher.update(*p);
+    }
+    let hash = hasher.finalize();
+    Scalar::from_bytes_mod_order_wide(&hash.into())
+}
+
 /// Full Fiat-Shamir challenge for confidential proofs.
 /// Matches the TS SDK's fiatShamirChallenge exactly:
 /// SHA512(DST_PREFIX || protocol_id || chain_id_le || sender || contract || token || ...extra)

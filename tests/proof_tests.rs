@@ -112,7 +112,7 @@ fn transfer_sigma_proof_serialize_deserialize_roundtrip_no_auditors() {
     let decoded =
         ConfidentialTransfer::deserialize_sigma_proof(&bytes).expect("deserialize should succeed");
     assert_eq!(decoded.alpha1_list.len(), 8);
-    assert!(decoded.x7_list.is_none());
+    assert!(decoded.x7_list.is_empty());
     assert_eq!(decoded.x8_list.len(), 4);
 }
 
@@ -146,8 +146,7 @@ fn transfer_sigma_proof_serialize_deserialize_roundtrip_with_auditors() {
         ConfidentialTransfer::deserialize_sigma_proof(&bytes).expect("deserialize should succeed");
     assert_eq!(decoded.alpha1_list.len(), 8);
     assert_eq!(decoded.x2_list.len(), 8);
-    assert!(decoded.x7_list.is_some());
-    assert_eq!(decoded.x7_list.as_ref().unwrap().len(), 4);
+    assert_eq!(decoded.x7_list.len(), 4);
     assert_eq!(decoded.x8_list.len(), 4);
 }
 

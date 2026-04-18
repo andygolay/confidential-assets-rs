@@ -1,8 +1,6 @@
 // Copyright © Move Industries
 // SPDX-License-Identifier: Apache-2.0
-use crate::crypto::chunked_amount::{
-    ChunkedAmount, AVAILABLE_BALANCE_CHUNK_COUNT, TRANSFER_AMOUNT_CHUNK_COUNT,
-};
+use crate::crypto::chunked_amount::ChunkedAmount;
 use crate::crypto::twisted_ed25519::{TwistedEd25519PrivateKey, TwistedEd25519PublicKey};
 use crate::crypto::twisted_el_gamal::{TwistedElGamal, TwistedElGamalCiphertext};
 use crate::utils::ed25519_gen_random;
@@ -22,18 +20,35 @@ impl EncryptedAmount {
         let randomness: Vec<Scalar> = (0..chunked_amount.len())
             .map(|_| ed25519_gen_random())
             .collect();
+        Self::new_with_randomness(chunked_amount, public_key, randomness)
+            .expect("generated randomness length matches chunks")
+    }
+
+    /// Encrypt with caller-provided randomness (length must be ≥ chunk count; only first `chunked.len()` used).
+    pub fn new_with_randomness(
+        chunked_amount: ChunkedAmount,
+        public_key: TwistedEd25519PublicKey,
+        randomness: Vec<Scalar>,
+    ) -> Result<Self, String> {
+        if randomness.len() < chunked_amount.len() {
+            return Err(format!(
+                "randomness length {} < chunk count {}",
+                randomness.len(),
+                chunked_amount.len()
+            ));
+        }
         let scalars = chunked_amount.to_scalars();
         let ciphertext: Vec<TwistedElGamalCiphertext> = scalars
             .iter()
-            .zip(randomness.iter())
+            .zip(randomness.iter().take(chunked_amount.len()))
             .map(|(v, r)| TwistedElGamal::encrypt_chunk(*v, &public_key, *r))
             .collect();
-        Self {
+        Ok(Self {
             chunked_amount,
             ciphertext,
             public_key,
             randomness,
-        }
+        })
     }
     /// Create from amount and public key (for balance, 4 chunks).
     pub fn from_amount_and_public_key(amount: u128, public_key: &TwistedEd25519PublicKey) -> Self {
@@ -45,8 +60,8 @@ impl EncryptedAmount {
     /// Note: Full DLOG requires kangaroo tables. For testing with known amounts,
     /// use from_amount_and_public_key instead.
     pub fn from_ciphertext_and_private_key(
-        ciphertext: &[TwistedElGamalCiphertext],
-        private_key: &TwistedEd25519PrivateKey,
+        _ciphertext: &[TwistedElGamalCiphertext],
+        _private_key: &TwistedEd25519PrivateKey,
     ) -> Result<Self, String> {
         // For each chunk, we need to solve DLOG(v*H) to recover v.
         // This is where the Pollard kangaroo algorithm is needed.
@@ -68,6 +83,22 @@ impl EncryptedAmount {
             out.extend_from_slice(&ct.to_bytes());
         }
         out
+    }
+    /// Concatenate D points only (32 bytes per chunk), matching TS `getCipherTextDPointBytes`.
+    pub fn get_ciphertext_d_point_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        for ct in &self.ciphertext {
+            out.extend_from_slice(&ct.d_bytes());
+        }
+        out
+    }
+    /// Plaintext chunk values as scalars (matches TS `getAmountChunks` used in sigma proofs).
+    pub fn amount_chunks_as_scalars(&self) -> Vec<Scalar> {
+        self.chunked_amount
+            .chunks()
+            .iter()
+            .map(|&c| Scalar::from(c))
+            .collect()
     }
     /// Get the chunked amount.
     pub fn chunked_amount(&self) -> &ChunkedAmount {

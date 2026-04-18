@@ -7,7 +7,8 @@ pub const PROOF_CHUNK_SIZE: usize = 32;
 pub const MAX_SENDER_AUDITOR_HINT_BYTES: usize = 256;
 
 pub const SIGMA_PROOF_WITHDRAW_SIZE: usize = PROOF_CHUNK_SIZE * 21;
-pub const SIGMA_PROOF_TRANSFER_SIZE: usize = PROOF_CHUNK_SIZE * 78;
+/// Base transfer sigma proof (no auditors): 56 × 32-byte chunks (TS / Move layout).
+pub const SIGMA_PROOF_TRANSFER_SIZE: usize = PROOF_CHUNK_SIZE * 56;
 pub const SIGMA_PROOF_KEY_ROTATION_SIZE: usize = PROOF_CHUNK_SIZE * 23;
 pub const SIGMA_PROOF_NORMALIZATION_SIZE: usize = PROOF_CHUNK_SIZE * 21;
 pub const SIGMA_PROOF_REGISTRATION_SIZE: usize = PROOF_CHUNK_SIZE * 2;

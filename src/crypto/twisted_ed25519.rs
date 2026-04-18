@@ -3,7 +3,6 @@
 use crate::utils::ed25519_gen_random;
 use curve25519_dalek::ristretto::RistrettoPoint;
 use curve25519_dalek::scalar::Scalar;
-use curve25519_dalek::traits::Identity;
 /// Twisted Ed25519 private key (a Ristretto scalar).
 #[derive(Clone, Debug)]
 pub struct TwistedEd25519PrivateKey {
@@ -71,7 +70,7 @@ impl TwistedEd25519PublicKey {
     pub fn to_bytes(&self) -> [u8; 32] {
         self.point.compress().to_bytes()
     }
-    /// Get raw bytes as Vec<u8>.
+    /// Get raw bytes as `Vec<u8>`.
     pub fn to_uint8_array(&self) -> Vec<u8> {
         self.to_bytes().to_vec()
     }

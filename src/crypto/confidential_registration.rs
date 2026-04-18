@@ -5,7 +5,6 @@ use crate::crypto::fiat_shamir::fiat_shamir_challenge_full;
 use crate::crypto::twisted_ed25519::{TwistedEd25519PrivateKey, TwistedEd25519PublicKey};
 use crate::utils::ed25519_gen_random;
 use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
-use curve25519_dalek::ristretto::RistrettoPoint;
 use curve25519_dalek::scalar::Scalar;
 /// A registration proof: Schnorr-style ZKPoK of a decryption key.
 #[derive(Clone, Debug)]

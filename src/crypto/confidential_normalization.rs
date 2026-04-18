@@ -1,12 +1,11 @@
 // Copyright © Move Industries
 // SPDX-License-Identifier: Apache-2.0
 use crate::consts::PROTOCOL_ID_NORMALIZATION;
-use crate::crypto::chunked_amount::{ChunkedAmount, AVAILABLE_BALANCE_CHUNK_COUNT, CHUNK_BITS};
+use crate::crypto::chunked_amount::{ChunkedAmount, AVAILABLE_BALANCE_CHUNK_COUNT};
 use crate::crypto::encrypted_amount::EncryptedAmount;
 use crate::crypto::fiat_shamir::fiat_shamir_challenge_full;
 use crate::crypto::h_ristretto;
 use crate::crypto::twisted_ed25519::{TwistedEd25519PrivateKey, TwistedEd25519PublicKey};
-use crate::crypto::twisted_el_gamal::TwistedElGamalCiphertext;
 use crate::utils::ed25519_gen_random;
 use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
 use curve25519_dalek::ristretto::RistrettoPoint;
@@ -153,10 +152,10 @@ impl ConfidentialNormalization {
     }
     /// Verify normalization sigma proof.
     pub fn verify_sigma_proof(
-        public_key: &TwistedEd25519PublicKey,
+        _public_key: &TwistedEd25519PublicKey,
         sigma_proof: &NormalizationSigmaProof,
-        unnormalized_encrypted_balance: &EncryptedAmount,
-        normalized_encrypted_balance: &EncryptedAmount,
+        _unnormalized_encrypted_balance: &EncryptedAmount,
+        _normalized_encrypted_balance: &EncryptedAmount,
         chain_id: u8,
         sender_address: &[u8],
         contract_address: &[u8],
@@ -172,7 +171,7 @@ impl ConfidentialNormalization {
         }
         transcript.extend_from_slice(&sigma_proof.a.compress().to_bytes());
         transcript.extend_from_slice(&sigma_proof.t.compress().to_bytes());
-        let c = fiat_shamir_challenge_full(
+        let _c = fiat_shamir_challenge_full(
             PROTOCOL_ID_NORMALIZATION,
             chain_id,
             sender_address,

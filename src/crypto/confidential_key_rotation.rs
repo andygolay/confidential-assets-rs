@@ -68,7 +68,7 @@ impl ConfidentialKeyRotation {
     /// Generate sigma proof.
     pub fn gen_sigma_proof(&self) -> KeyRotationSigmaProof {
         let g = RISTRETTO_BASEPOINT_POINT;
-        let h = h_ristretto();
+        let _h = h_ristretto();
         let old_dk = self.sender_decryption_key.as_scalar();
         let new_dk = self.new_sender_decryption_key.as_scalar();
         let old_pk = self.sender_decryption_key.public_key();
@@ -145,14 +145,14 @@ impl ConfidentialKeyRotation {
     }
     /// Verify sigma proof.
     pub fn verify_sigma_proof(
-        sigma_proof: &KeyRotationSigmaProof,
-        curr_public_key: &TwistedEd25519PublicKey,
-        new_public_key: &TwistedEd25519PublicKey,
-        curr_encrypted_balance: &[TwistedElGamalCiphertext],
-        new_encrypted_balance: &[TwistedElGamalCiphertext],
-        chain_id: u8,
-        sender_address: &[u8],
-        contract_address: &[u8],
+        _sigma_proof: &KeyRotationSigmaProof,
+        _curr_public_key: &TwistedEd25519PublicKey,
+        _new_public_key: &TwistedEd25519PublicKey,
+        _curr_encrypted_balance: &[TwistedElGamalCiphertext],
+        _new_encrypted_balance: &[TwistedElGamalCiphertext],
+        _chain_id: u8,
+        _sender_address: &[u8],
+        _contract_address: &[u8],
     ) -> bool {
         // Placeholder — full verification would check commitment equations
         // TODO: Implement full verification
