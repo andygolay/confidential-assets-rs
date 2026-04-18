@@ -3,44 +3,21 @@
 
 //! View functions for querying on-chain confidential asset state.
 //!
-//! These mirror the TS SDK's `viewFunctions.ts` and call on-chain view functions
-//! to retrieve encrypted balances, encryption keys, normalization status, etc.
+//! Mirrors the TS SDK's `viewFunctions.ts`. Uses the Aptos Rust SDK client
+//! to call on-chain view functions for encrypted balances, encryption keys, etc.
+//!
+//! TODO: Switch `aptos_sdk::Aptos` → `movement_sdk::Movement` once the fork is ready.
 
+use aptos_sdk::{Aptos, AptosError, types::AccountAddress};
 use crate::crypto::{TwistedEd25519PublicKey, EncryptedAmount, TwistedElGamalCiphertext};
 use crate::consts::{DEFAULT_CONFIDENTIAL_COIN_MODULE_ADDRESS, MODULE_NAME};
-
-/// A trait for making view function calls to the Movement blockchain.
-///
-/// Implement this with your preferred HTTP client (e.g., reqwest) to call
-/// the Movement REST API's `/view` endpoint.
-pub trait MovementClient {
-    /// Call a view function on-chain and return the BCS-decoded result as bytes.
-    /// The implementor is responsible for deserializing the response.
-    fn view(
-        &self,
-        module_address: &str,
-        module_name: &str,
-        function_name: &str,
-        type_arguments: &[&str],
-        arguments: &[Vec<u8>],
-    ) -> impl std::future::Future<Output = Result<Vec<Vec<u8>>, ViewFunctionError>> + Send;
-}
-
-/// Error type for view function calls.
-#[derive(Debug, thiserror::Error)]
-pub enum ViewFunctionError {
-    #[error("RPC error: {0}")]
-    RpcError(String),
-    #[error("Deserialization error: {0}")]
-    DeserializationError(String),
-    #[error("No auditor set for token")]
-    NoAuditor,
-}
 
 /// Represents a confidential balance with both available and pending encrypted amounts.
 #[derive(Debug, Clone)]
 pub struct ConfidentialBalance {
+    /// Available (actual) encrypted balance.
     pub available: EncryptedAmount,
+    /// Pending encrypted balance.
     pub pending: EncryptedAmount,
 }
 
@@ -66,47 +43,48 @@ impl ConfidentialBalance {
     }
 }
 
-/// Parameters for view function calls.
-#[derive(Debug, Clone)]
-pub struct ViewFunctionParams<'a> {
-    pub account_address: &'a [u8; 32],
-    pub token_address: &'a [u8; 32],
-    pub module_address: Option<&'a str>,
-    pub ledger_version: Option<u64>,
+/// Helper to build a fully qualified function path.
+fn func_path(module_address: &str, function_name: &str) -> String {
+    format!("{}::{}::{}", module_address, MODULE_NAME, function_name)
+}
+
+/// BCS-encode an AccountAddress argument for view function calls.
+fn bcs_address(addr: &AccountAddress) -> Vec<u8> {
+    bcs::to_bytes(addr).unwrap_or_default()
 }
 
 /// Get the confidential balance for an account.
 ///
 /// Calls on-chain `pending_balance` and `actual_balance` view functions,
-/// decrypts the ciphertexts using the provided decryption key.
+/// then decrypts the ciphertexts using the provided decryption key.
+// TODO: Switch `Aptos` → `Movement`
 pub async fn get_balance(
-    client: &dyn MovementClient,
-    account_address: &[u8; 32],
-    token_address: &[u8; 32],
+    client: &Aptos,
+    account_address: &AccountAddress,
+    token_address: &AccountAddress,
     decryption_key: &crate::crypto::TwistedEd25519PrivateKey,
     module_address: Option<&str>,
-) -> Result<ConfidentialBalance, ViewFunctionError> {
+) -> Result<ConfidentialBalance, AptosError> {
     let mod_addr = module_address.unwrap_or(DEFAULT_CONFIDENTIAL_COIN_MODULE_ADDRESS);
 
-    // Fetch pending balance ciphertext
-    let pending_bytes = client.view(
-        mod_addr,
-        MODULE_NAME,
-        "pending_balance",
-        &[],
-        &[account_address.to_vec(), token_address.to_vec()],
-    ).await?;
+    // Fetch pending and available balances in parallel
+    let (pending_result, available_result) = tokio::join!(
+        client.view_bcs_raw(
+            &func_path(mod_addr, "pending_balance"),
+            vec![],
+            vec![bcs_address(account_address), bcs_address(token_address)],
+        ),
+        client.view_bcs_raw(
+            &func_path(mod_addr, "actual_balance"),
+            vec![],
+            vec![bcs_address(account_address), bcs_address(token_address)],
+        ),
+    );
 
-    // Fetch available balance ciphertext
-    let available_bytes = client.view(
-        mod_addr,
-        MODULE_NAME,
-        "actual_balance",
-        &[],
-        &[account_address.to_vec(), token_address.to_vec()],
-    ).await?;
+    let pending_bytes = pending_result?;
+    let available_bytes = available_result?;
 
-    // Deserialize ciphertexts and create encrypted amounts
+    // Deserialize ciphertext chunks and create encrypted amounts
     let pending_ct = deserialize_ciphertext_chunks(&pending_bytes)?;
     let available_ct = deserialize_ciphertext_chunks(&available_bytes)?;
 
@@ -117,153 +95,125 @@ pub async fn get_balance(
 }
 
 /// Check if a user's balance is normalized.
+// TODO: Switch `Aptos` → `Movement`
 pub async fn is_balance_normalized(
-    client: &dyn MovementClient,
-    account_address: &[u8; 32],
-    token_address: &[u8; 32],
+    client: &Aptos,
+    account_address: &AccountAddress,
+    token_address: &AccountAddress,
     module_address: Option<&str>,
-) -> Result<bool, ViewFunctionError> {
+) -> Result<bool, AptosError> {
     let mod_addr = module_address.unwrap_or(DEFAULT_CONFIDENTIAL_COIN_MODULE_ADDRESS);
-    let result = client.view(
-        mod_addr,
-        MODULE_NAME,
-        "is_normalized",
-        &[],
-        &[account_address.to_vec(), token_address.to_vec()],
-    ).await?;
-
-    // Expect a single bool byte
-    result.first()
-        .and_then(|v| v.first())
-        .map(|&b| b != 0)
-        .ok_or_else(|| ViewFunctionError::DeserializationError("expected bool".into()))
+    client.view_bcs(
+        &func_path(mod_addr, "is_normalized"),
+        vec![],
+        vec![bcs_address(account_address), bcs_address(token_address)],
+    ).await
 }
 
 /// Check if a user's pending balance is frozen.
+// TODO: Switch `Aptos` → `Movement`
 pub async fn is_pending_balance_frozen(
-    client: &dyn MovementClient,
-    account_address: &[u8; 32],
-    token_address: &[u8; 32],
+    client: &Aptos,
+    account_address: &AccountAddress,
+    token_address: &AccountAddress,
     module_address: Option<&str>,
-) -> Result<bool, ViewFunctionError> {
+) -> Result<bool, AptosError> {
     let mod_addr = module_address.unwrap_or(DEFAULT_CONFIDENTIAL_COIN_MODULE_ADDRESS);
-    let result = client.view(
-        mod_addr,
-        MODULE_NAME,
-        "is_frozen",
-        &[],
-        &[account_address.to_vec(), token_address.to_vec()],
-    ).await?;
-
-    result.first()
-        .and_then(|v| v.first())
-        .map(|&b| b != 0)
-        .ok_or_else(|| ViewFunctionError::DeserializationError("expected bool".into()))
+    client.view_bcs(
+        &func_path(mod_addr, "is_frozen"),
+        vec![],
+        vec![bcs_address(account_address), bcs_address(token_address)],
+    ).await
 }
 
 /// Check if a user has registered a confidential asset balance.
+// TODO: Switch `Aptos` → `Movement`
 pub async fn has_user_registered(
-    client: &dyn MovementClient,
-    account_address: &[u8; 32],
-    token_address: &[u8; 32],
+    client: &Aptos,
+    account_address: &AccountAddress,
+    token_address: &AccountAddress,
     module_address: Option<&str>,
-) -> Result<bool, ViewFunctionError> {
+) -> Result<bool, AptosError> {
     let mod_addr = module_address.unwrap_or(DEFAULT_CONFIDENTIAL_COIN_MODULE_ADDRESS);
-    let result = client.view(
-        mod_addr,
-        MODULE_NAME,
-        "has_confidential_asset_store",
-        &[],
-        &[account_address.to_vec(), token_address.to_vec()],
-    ).await?;
-
-    result.first()
-        .and_then(|v| v.first())
-        .map(|&b| b != 0)
-        .ok_or_else(|| ViewFunctionError::DeserializationError("expected bool".into()))
+    client.view_bcs(
+        &func_path(mod_addr, "has_confidential_asset_store"),
+        vec![],
+        vec![bcs_address(account_address), bcs_address(token_address)],
+    ).await
 }
 
 /// Get the encryption key for an account for a given token.
+// TODO: Switch `Aptos` → `Movement`
 pub async fn get_encryption_key(
-    client: &dyn MovementClient,
-    account_address: &[u8; 32],
-    token_address: &[u8; 32],
+    client: &Aptos,
+    account_address: &AccountAddress,
+    token_address: &AccountAddress,
     module_address: Option<&str>,
-) -> Result<TwistedEd25519PublicKey, ViewFunctionError> {
+) -> Result<TwistedEd25519PublicKey, AptosError> {
     let mod_addr = module_address.unwrap_or(DEFAULT_CONFIDENTIAL_COIN_MODULE_ADDRESS);
-    let result = client.view(
-        mod_addr,
-        MODULE_NAME,
-        "encryption_key",
-        &[],
-        &[account_address.to_vec(), token_address.to_vec()],
+
+    // View returns `CompressedPubkey { point: { data: bytes } }`
+    let result: Vec<u8> = client.view_bcs(
+        &func_path(mod_addr, "encryption_key"),
+        vec![],
+        vec![bcs_address(account_address), bcs_address(token_address)],
     ).await?;
 
-    // Expect 32-byte compressed Ristretto point
-    let key_bytes = result.first()
-        .ok_or_else(|| ViewFunctionError::DeserializationError("missing encryption key".into()))?;
-
-    TwistedEd25519PublicKey::from_bytes(key_bytes)
-        .map_err(|e| ViewFunctionError::DeserializationError(format!("invalid encryption key: {}", e)))
+    TwistedEd25519PublicKey::from_bytes(&result)
+        .map_err(|e| AptosError::unexpected_response(format!("invalid encryption key: {}", e)))
 }
 
 /// Get the global auditor encryption key for a token, if set.
+// TODO: Switch `Aptos` → `Movement`
 pub async fn get_global_auditor_encryption_key(
-    client: &dyn MovementClient,
-    token_address: &[u8; 32],
+    client: &Aptos,
+    token_address: &AccountAddress,
     module_address: Option<&str>,
-) -> Result<Option<TwistedEd25519PublicKey>, ViewFunctionError> {
+) -> Result<Option<TwistedEd25519PublicKey>, AptosError> {
     let mod_addr = module_address.unwrap_or(DEFAULT_CONFIDENTIAL_COIN_MODULE_ADDRESS);
-    let result = client.view(
-        mod_addr,
-        MODULE_NAME,
-        "get_auditor",
-        &[],
-        &[token_address.to_vec()],
+
+    // `get_auditor` returns `Option<CompressedPubkey>` — BCS-encoded
+    let result: Option<Vec<u8>> = client.view_bcs(
+        &func_path(mod_addr, "get_auditor"),
+        vec![],
+        vec![bcs_address(token_address)],
     ).await?;
 
-    // Move Option: if empty or zero bytes, no auditor set
-    let bytes = result.first()
-        .ok_or_else(|| ViewFunctionError::DeserializationError("missing auditor response".into()))?;
-
-    if bytes.is_empty() {
-        return Ok(None);
-    }
-
-    match TwistedEd25519PublicKey::from_bytes(bytes) {
-        Ok(key) => Ok(Some(key)),
-        Err(_) => Ok(None),
+    match result {
+        Some(bytes) if !bytes.is_empty() => {
+            match TwistedEd25519PublicKey::from_bytes(&bytes) {
+                Ok(key) => Ok(Some(key)),
+                Err(_) => Ok(None),
+            }
+        }
+        _ => Ok(None),
     }
 }
 
 /// Get the chain ID byte used in Fiat-Shamir proof transcripts.
-pub async fn get_chain_id_byte_for_proofs(
-    client: &dyn MovementClient,
-) -> Result<u8, ViewFunctionError> {
-    let result = client.view(
-        "0x1",
-        "chain_id",
-        "get",
-        &[],
-        &[],
+// TODO: Switch `Aptos` → `Movement`
+pub async fn get_chain_id_byte_for_proofs(client: &Aptos) -> Result<u8, AptosError> {
+    let id: u8 = client.view_bcs(
+        "0x1::chain_id::get",
+        vec![],
+        vec![],
     ).await?;
-
-    result.first()
-        .and_then(|v| v.first())
-        .map(|&b| b)
-        .ok_or_else(|| ViewFunctionError::DeserializationError("expected chain_id u8".into()))
+    Ok(id)
 }
 
 /// Deserialize BCS-encoded ciphertext chunks from a view response.
 /// Each chunk is a pair of 32-byte Ristretto points (left, right).
-fn deserialize_ciphertext_chunks(chunks_bytes: &[Vec<u8>]) -> Result<Vec<TwistedElGamalCiphertext>, ViewFunctionError> {
+fn deserialize_ciphertext_chunks(bytes: &[u8]) -> Result<Vec<TwistedElGamalCiphertext>, AptosError> {
+    // The on-chain response is a `CompressedConfidentialBalance` containing
+    // chunks of (left, right) pairs as 64-byte blocks.
+    if bytes.len() % 64 != 0 {
+        return Err(AptosError::unexpected_response(
+            format!("ciphertext chunk size not multiple of 64 (got {})", bytes.len()),
+        ));
+    }
+
     let mut ciphertexts = Vec::new();
-    for chunk in chunks_bytes {
-        if chunk.len() != 64 {
-            return Err(ViewFunctionError::DeserializationError(
-                format!("expected 64-byte ciphertext chunk, got {}", chunk.len())
-            ));
-        }
+    for chunk in bytes.chunks_exact(64) {
         let mut left = [0u8; 32];
         let mut right = [0u8; 32];
         left.copy_from_slice(&chunk[..32]);
