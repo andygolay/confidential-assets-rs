@@ -22,17 +22,17 @@
 //! - `helpers` — Utility functions
 //! - `utils` — Scalar generation utilities
 
-pub mod consts;
-pub mod utils;
-pub mod helpers;
-pub mod bcs;
-pub mod crypto;
-pub mod internal;
 pub mod api;
+pub mod bcs;
+pub mod consts;
+pub mod crypto;
+pub mod helpers;
+pub mod internal;
+pub mod utils;
 
 // Re-export main API types
 pub use api::ConfidentialAsset;
+pub use consts::*;
+pub use crypto::*;
 pub use internal::transaction_builder::ConfidentialAssetTransactionBuilder;
 pub use internal::view_functions::ConfidentialBalance;
-pub use crypto::*;
-pub use consts::*;

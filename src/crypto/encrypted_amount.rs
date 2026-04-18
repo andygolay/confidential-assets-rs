@@ -1,11 +1,12 @@
-src/crypto/encrypted_amount.rs:
 // Copyright © Move Industries
 // SPDX-License-Identifier: Apache-2.0
-use curve25519_dalek::scalar::Scalar;
+use crate::crypto::chunked_amount::{
+    ChunkedAmount, AVAILABLE_BALANCE_CHUNK_COUNT, TRANSFER_AMOUNT_CHUNK_COUNT,
+};
 use crate::crypto::twisted_ed25519::{TwistedEd25519PrivateKey, TwistedEd25519PublicKey};
 use crate::crypto::twisted_el_gamal::{TwistedElGamal, TwistedElGamalCiphertext};
-use crate::crypto::chunked_amount::{ChunkedAmount, AVAILABLE_BALANCE_CHUNK_COUNT, TRANSFER_AMOUNT_CHUNK_COUNT};
 use crate::utils::ed25519_gen_random;
+use curve25519_dalek::scalar::Scalar;
 /// Encrypted amount: holds chunked ciphertexts and can decrypt to get the amount.
 #[derive(Clone, Debug)]
 pub struct EncryptedAmount {
@@ -18,13 +19,21 @@ pub struct EncryptedAmount {
 impl EncryptedAmount {
     /// Create a new encrypted amount from a chunked amount and public key.
     pub fn new(chunked_amount: ChunkedAmount, public_key: TwistedEd25519PublicKey) -> Self {
-        let randomness: Vec<Scalar> = (0..chunked_amount.len()).map(|_| ed25519_gen_random()).collect();
+        let randomness: Vec<Scalar> = (0..chunked_amount.len())
+            .map(|_| ed25519_gen_random())
+            .collect();
         let scalars = chunked_amount.to_scalars();
-let ciphertext: Vec<TwistedElGamalCiphertext> = scalars.iter()
+        let ciphertext: Vec<TwistedElGamalCiphertext> = scalars
+            .iter()
             .zip(randomness.iter())
             .map(|(v, r)| TwistedElGamal::encrypt_chunk(*v, &public_key, *r))
             .collect();
-        Self { chunked_amount, ciphertext, public_key, randomness }
+        Self {
+            chunked_amount,
+            ciphertext,
+            public_key,
+            randomness,
+        }
     }
     /// Create from amount and public key (for balance, 4 chunks).
     pub fn from_amount_and_public_key(amount: u128, public_key: &TwistedEd25519PublicKey) -> Self {
@@ -73,4 +82,3 @@ let ciphertext: Vec<TwistedElGamalCiphertext> = scalars.iter()
         &self.public_key
     }
 }
-

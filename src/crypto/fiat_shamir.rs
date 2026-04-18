@@ -1,7 +1,7 @@
 // Copyright © Move Industries
 // SPDX-License-Identifier: Apache-2.0
-use sha2::{Sha512, Digest};
 use curve25519_dalek::scalar::Scalar;
+use sha2::{Digest, Sha512};
 /// DST prefix for Fiat-Shamir hashing.
 const DST_PREFIX: &[u8] = b"MovementConfidentialAsset/";
 /// Domain-separated hash using SHA2-512.
@@ -37,7 +37,7 @@ pub fn fiat_shamir_challenge(
         hasher.update(*data);
     }
     let hash = hasher.finalize();
-Scalar::from_bytes_mod_order_wide(&hash.into())
+    Scalar::from_bytes_mod_order_wide(&hash.into())
 }
 /// Generate Fiat-Shamir challenge with contract address included.
 pub fn fiat_shamir_challenge_with_contract(
@@ -52,7 +52,13 @@ pub fn fiat_shamir_challenge_with_contract(
     for d in extra_data {
         combined.push(*d);
     }
-    fiat_shamir_challenge(protocol_id, chain_id, &combined.concat(), token_address, &[])
+    fiat_shamir_challenge(
+        protocol_id,
+        chain_id,
+        &combined.concat(),
+        token_address,
+        &[],
+    )
 }
 /// Full Fiat-Shamir challenge for confidential proofs.
 /// Matches the TS SDK's fiatShamirChallenge exactly:
@@ -78,4 +84,3 @@ pub fn fiat_shamir_challenge_full(
     let hash = hasher.finalize();
     Scalar::from_bytes_mod_order_wide(&hash.into())
 }
-

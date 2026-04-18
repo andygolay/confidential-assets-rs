@@ -1,4 +1,3 @@
-src/crypto/chunked_amount.rs:
 // Copyright © Move Industries
 // SPDX-License-Identifier: Apache-2.0
 /// Number of bits per chunk.
@@ -10,7 +9,7 @@ pub const TRANSFER_AMOUNT_CHUNK_COUNT: usize = 8;
 /// Maximum plaintext value for a confidential transfer.
 /// Each chunk is 64 bits, transfer amount has 8 chunks.
 /// Total: 64 * 8 = 512 bits.
-pub const MAX_CONFIDENTIAL_TRANSFER_PLAINTEXT: u128 = (1u128 << 256) - 1; // 2^256 - 1 (4 chunks * 64 bits for balance)
+pub const MAX_CONFIDENTIAL_TRANSFER_PLAINTEXT: u128 = u128::MAX; // 2^128 - 1 (max for u128, 4 chunks * 64 bits for balance)
 /// ChunkedAmount splits a big amount into fixed-size (64-bit) chunks.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ChunkedAmount {
@@ -18,7 +17,7 @@ pub struct ChunkedAmount {
     chunks: Vec<u64>,
 }
 impl ChunkedAmount {
-/// Create a ChunkedAmount from a raw amount, splitting into chunk_count 64-bit chunks.
+    /// Create a ChunkedAmount from a raw amount, splitting into chunk_count 64-bit chunks.
     pub fn from_amount_with_chunks(amount: u128, chunk_count: usize) -> Self {
         let mut chunks = Vec::with_capacity(chunk_count);
         let mut remaining = amount;
@@ -44,10 +43,13 @@ impl ChunkedAmount {
     /// Create from a list of bigint chunks (matching TS API which uses bigint).
     pub fn from_bigint_chunks(chunks: Vec<curve25519_dalek::scalar::Scalar>) -> Self {
         // Each Scalar chunk represents a u64 value
-        let u64_chunks: Vec<u64> = chunks.iter().map(|s| {
-            let bytes = s.to_bytes();
-            u64::from_le_bytes(bytes[0..8].try_into().unwrap())
-        }).collect();
+        let u64_chunks: Vec<u64> = chunks
+            .iter()
+            .map(|s| {
+                let bytes = s.to_bytes();
+                u64::from_le_bytes(bytes[0..8].try_into().unwrap())
+            })
+            .collect();
         Self { chunks: u64_chunks }
     }
     /// Get the chunks.
@@ -88,4 +90,3 @@ impl ChunkedAmount {
         Self { chunks }
     }
 }
-

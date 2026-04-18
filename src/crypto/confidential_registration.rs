@@ -1,13 +1,12 @@
-src/crypto/confidential_registration.rs:
 // Copyright © Move Industries
 // SPDX-License-Identifier: Apache-2.0
+use crate::consts::PROTOCOL_ID_REGISTRATION;
+use crate::crypto::fiat_shamir::fiat_shamir_challenge_full;
+use crate::crypto::twisted_ed25519::{TwistedEd25519PrivateKey, TwistedEd25519PublicKey};
+use crate::utils::ed25519_gen_random;
+use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
 use curve25519_dalek::ristretto::RistrettoPoint;
 use curve25519_dalek::scalar::Scalar;
-use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
-use crate::crypto::twisted_ed25519::{TwistedEd25519PrivateKey, TwistedEd25519PublicKey};
-use crate::crypto::fiat_shamir::fiat_shamir_challenge_full;
-use crate::consts::PROTOCOL_ID_REGISTRATION;
-use crate::utils::ed25519_gen_random;
 /// A registration proof: Schnorr-style ZKPoK of a decryption key.
 #[derive(Clone, Debug)]
 pub struct RegistrationProof {
@@ -44,8 +43,11 @@ pub fn gen_registration_proof(
     // 4. Response: s = k - c * dk
     let dk = decryption_key.as_scalar();
     let s = k - c * dk;
-let response = s.to_bytes();
-    RegistrationProof { commitment, response }
+    let response = s.to_bytes();
+    RegistrationProof {
+        commitment,
+        response,
+    }
 }
 /// Verify a registration proof.
 pub fn verify_registration_proof(
@@ -72,7 +74,13 @@ pub fn verify_registration_proof(
         None => return false,
     };
     // Parse response scalar s
-    let s = match Scalar::from_canonical_bytes(proof.response) {
+    let s_ct = Scalar::from_canonical_bytes(proof.response);
+    if !bool::from(s_ct.is_some()) {
+        return false;
+    }
+    // CtOption doesn't expose value() or unwrap(). We know it's valid from is_some check.
+    // Use a match on Option converted via Into
+    let s: Scalar = match <Option<Scalar>>::from(s_ct) {
         Some(s) => s,
         None => return false,
     };
@@ -89,4 +97,3 @@ pub fn verify_registration_proof(
     let lhs = s * RISTRETTO_BASEPOINT_POINT + c * pk.as_point();
     lhs == r_point
 }
-
