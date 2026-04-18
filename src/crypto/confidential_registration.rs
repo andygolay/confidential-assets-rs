@@ -74,7 +74,13 @@ pub fn verify_registration_proof(
         None => return false,
     };
     // Parse response scalar s
-    let s = match Scalar::from_canonical_bytes(proof.response) {
+    let s_ct = Scalar::from_canonical_bytes(proof.response);
+    if !bool::from(s_ct.is_some()) {
+        return false;
+    }
+    // CtOption doesn't expose value() or unwrap(). We know it's valid from is_some check.
+    // Use a match on Option converted via Into
+    let s: Scalar = match <Option<Scalar>>::from(s_ct) {
         Some(s) => s,
         None => return false,
     };

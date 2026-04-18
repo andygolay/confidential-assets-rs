@@ -461,7 +461,7 @@ impl ConfidentialTransfer {
             let s_bytes: [u8; 32] = bytes[offset..offset + chunk]
                 .try_into()
                 .map_err(|_| "slice error")?;
-            Scalar::from_canonical_bytes(s_bytes).ok_or("Invalid scalar".to_string())
+            Option::from(Scalar::from_canonical_bytes(s_bytes)).ok_or("Invalid scalar".to_string())
         };
         // Detect if auditors are present based on total length
         let has_auditors = bytes.len() > crate::consts::SIGMA_PROOF_TRANSFER_SIZE;

@@ -9,7 +9,7 @@ pub const TRANSFER_AMOUNT_CHUNK_COUNT: usize = 8;
 /// Maximum plaintext value for a confidential transfer.
 /// Each chunk is 64 bits, transfer amount has 8 chunks.
 /// Total: 64 * 8 = 512 bits.
-pub const MAX_CONFIDENTIAL_TRANSFER_PLAINTEXT: u128 = (1u128 << 256) - 1; // 2^256 - 1 (4 chunks * 64 bits for balance)
+pub const MAX_CONFIDENTIAL_TRANSFER_PLAINTEXT: u128 = u128::MAX; // 2^128 - 1 (max for u128, 4 chunks * 64 bits for balance)
 /// ChunkedAmount splits a big amount into fixed-size (64-bit) chunks.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ChunkedAmount {

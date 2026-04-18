@@ -151,9 +151,7 @@ impl<'a> ConfidentialAsset<'a> {
 
         if !is_norm {
             let dk = sender_decryption_key.ok_or_else(|| {
-                AptosError::unexpected_response(
-                    "Rollover failed. Balance is not normalized and no sender decryption key was provided.",
-                )
+                AptosError::Internal("Rollover failed. Balance is not normalized and no sender decryption key was provided.".to_string())
             })?;
 
             let normalize_payload = self

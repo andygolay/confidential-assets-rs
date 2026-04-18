@@ -31,7 +31,6 @@ use curve25519_dalek::scalar::Scalar;
 /// This is a fixed RistrettoPoint derived from a domain-separated hash of "H_RISTRETTO".
 /// Must match the on-chain Move constant exactly.
 pub fn h_ristretto() -> RistrettoPoint {
-    use curve25519_dalek::digest::Digest;
     use sha2::{Digest, Sha512};
 
     let mut hasher = Sha512::new();
