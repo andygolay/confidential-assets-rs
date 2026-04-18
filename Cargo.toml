@@ -1,0 +1,20 @@
+[package]
+name = "confidential-assets"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Rust SDK for Movement Network confidential assets — ZK proofs, Twisted ElGamal encryption, and confidential transfers on MoveVM"
+authors = ["Move Industries"]
+
+[dependencies]
+curve25519-dalek = { version = "4", features = ["serde"] }
+sha2 = "0.10"
+sha3 = "0.10"
+rand = "0.8"
+thiserror = "1"
+bcs = "0.1"
+serde = { version = "1", features = ["derive"] }
+hex = "0.4"
+
+[dev-dependencies]
+rand = "0.8"
