@@ -74,7 +74,7 @@ pub fn verify_registration_proof(
         None => return false,
     };
     // Parse response scalar s
-    let s = match Scalar::from_canonical_bytes(proof.response) {
+    let s = match Option::from(Scalar::from_canonical_bytes(proof.response)) {
         Some(s) => s,
         None => return false,
     };
