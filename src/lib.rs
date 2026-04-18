@@ -10,10 +10,12 @@
 //! - Fiat-Shamir sigma proofs
 //! - Range proofs (placeholder for bulletproofs integration)
 //!
+//! TODO: Switch `aptos_sdk` references → `movement_sdk` once the fork is ready.
+//!
 //! ## Structure
 //!
 //! - `crypto` — Core cryptographic primitives (keys, encryption, proofs)
-//! - `api` — High-level API for building and submitting confidential asset transactions
+//! - `api` — High-level API for building confidential asset transactions
 //! - `internal` — Transaction builder and on-chain view functions
 //! - `bcs` — BCS serialization helpers
 //! - `consts` — Protocol constants
@@ -30,6 +32,7 @@ pub mod api;
 
 // Re-export main API types
 pub use api::ConfidentialAsset;
-pub use internal::{ConfidentialAssetTransactionBuilder, TransactionPayload, MovementClient, ViewFunctionError, ConfidentialBalance};
+pub use internal::transaction_builder::ConfidentialAssetTransactionBuilder;
+pub use internal::view_functions::ConfidentialBalance;
 pub use crypto::*;
 pub use consts::*;
