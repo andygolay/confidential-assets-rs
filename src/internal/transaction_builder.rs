@@ -3,10 +3,16 @@
 
 //! Transaction builder for confidential asset operations.
 //!
-//! Mirrors the TS SDK's `confidentialAssetTxnBuilder.ts`. Constructs the
-//! function arguments (proofs, ciphertexts, etc.) for each confidential
-//! asset Move entry point.
+//! Mirrors the TS SDK's `confidentialAssetTxnBuilder.ts`. Constructs entry
+//! function payloads for each confidential asset Move entry point.
+//!
+//! TODO: Switch `aptos_sdk` types → `movement_sdk` types once the fork is ready.
 
+use aptos_sdk::{
+    Aptos, AptosError,
+    transaction::{EntryFunction, payload::TransactionPayload},
+    types::{AccountAddress, TypeTag},
+};
 use crate::crypto::{
     TwistedEd25519PrivateKey, TwistedEd25519PublicKey,
     ConfidentialWithdraw, ConfidentialTransfer, ConfidentialKeyRotation,
@@ -14,27 +20,33 @@ use crate::crypto::{
 };
 use crate::crypto::confidential_registration::gen_registration_proof;
 use crate::consts::{DEFAULT_CONFIDENTIAL_COIN_MODULE_ADDRESS, MODULE_NAME, MAX_SENDER_AUDITOR_HINT_BYTES};
-use super::view_functions::{MovementClient, ViewFunctionError, get_balance, get_encryption_key, get_global_auditor_encryption_key, is_pending_balance_frozen, is_balance_normalized, get_chain_id_byte_for_proofs};
+use super::view_functions::{
+    get_balance, get_encryption_key, get_global_auditor_encryption_key,
+    is_pending_balance_frozen, is_balance_normalized, get_chain_id_byte_for_proofs,
+};
 
-/// A built transaction payload ready for signing and submission.
-/// Contains the function identifier and serialized arguments.
-#[derive(Debug, Clone)]
-pub struct TransactionPayload {
-    pub module_address: String,
-    pub module_name: String,
-    pub function_name: String,
-    pub type_arguments: Vec<String>,
-    pub arguments: Vec<Vec<u8>>,
+/// Helper: BCS-encode an AccountAddress.
+fn bcs_addr(addr: &AccountAddress) -> Vec<u8> {
+    bcs::to_bytes(addr).unwrap_or_default()
 }
 
+/// Helper: parse module address string to AccountAddress.
+fn parse_module_address(addr: &str) -> AccountAddress {
+    AccountAddress::from_hex_literal(addr).unwrap_or(AccountAddress::ZERO)
+}
+
+// TODO: Switch `Aptos` → `Movement`
 /// Builder for confidential asset transactions.
-pub struct ConfidentialAssetTransactionBuilder<C: MovementClient> {
-    pub client: C,
+///
+/// Returns `TransactionPayload` (aptos-sdk entry function) ready for
+/// `aptos.sign_and_submit()` / `aptos.simulate()`.
+pub struct ConfidentialAssetTransactionBuilder<'a> {
+    pub client: &'a Aptos,
     pub confidential_asset_module_address: String,
 }
 
-impl<C: MovementClient + Sync> ConfidentialAssetTransactionBuilder<C> {
-    pub fn new(client: C, confidential_asset_module_address: Option<&str>) -> Self {
+impl<'a> ConfidentialAssetTransactionBuilder<'a> {
+    pub fn new(client: &'a Aptos, confidential_asset_module_address: Option<&str>) -> Self {
         let addr = confidential_asset_module_address
             .unwrap_or(DEFAULT_CONFIDENTIAL_COIN_MODULE_ADDRESS)
             .to_string();
@@ -44,137 +56,138 @@ impl<C: MovementClient + Sync> ConfidentialAssetTransactionBuilder<C> {
         }
     }
 
-    /// Build a `register` transaction.
+    /// Build a `register` entry function payload.
     pub async fn register_balance(
         &self,
-        sender: &[u8; 32],
-        token_address: &[u8; 32],
+        sender: &AccountAddress,
+        token_address: &AccountAddress,
         decryption_key: &TwistedEd25519PrivateKey,
-    ) -> Result<TransactionPayload, ViewFunctionError> {
-        let chain_id = get_chain_id_byte_for_proofs(&self.client).await?;
-        let contract_bytes = hex::decode(&self.confidential_asset_module_address.trim_start_matches("0x"))
-            .unwrap_or_default();
-        let contract_address: &[u8] = &contract_bytes;
+    ) -> Result<TransactionPayload, AptosError> {
+        let chain_id = get_chain_id_byte_for_proofs(self.client).await?;
+        let contract_address = parse_module_address(&self.confidential_asset_module_address);
+        let sender_bytes = sender.into_bytes();
+        let token_bytes = token_address.into_bytes();
 
         let proof = gen_registration_proof(
             decryption_key,
             chain_id,
-            sender,
-            contract_address,
-            token_address,
+            &sender_bytes,
+            contract_address.as_bytes(),
+            &token_bytes,
         );
 
         let public_key_bytes = decryption_key.public_key().to_bytes();
 
-        Ok(TransactionPayload {
-            module_address: self.confidential_asset_module_address.clone(),
-            module_name: MODULE_NAME.to_string(),
-            function_name: "register".to_string(),
-            type_arguments: vec![],
-            arguments: vec![
-                token_address.to_vec(),
+        Ok(EntryFunction::new(
+            aptos_sdk::types::MoveModuleId::new(
+                contract_address,
+                MODULE_NAME.to_string().into(),
+            ),
+            "register",
+            vec![],
+            vec![
+                bcs_addr(token_address),
                 public_key_bytes.to_vec(),
                 proof.commitment.to_vec(),
                 proof.response.to_vec(),
             ],
-        })
+        ).into())
     }
 
-    /// Build a `deposit_to` transaction.
+    /// Build a `deposit_to` entry function payload.
     pub fn deposit(
         &self,
-        sender: &[u8; 32],
-        token_address: &[u8; 32],
+        token_address: &AccountAddress,
         amount: u64,
-        recipient: Option<&[u8; 32]>,
-    ) -> Result<TransactionPayload, ViewFunctionError> {
-        let recipient_addr = recipient.copied().unwrap_or(*sender);
+        recipient: Option<&AccountAddress>,
+    ) -> Result<TransactionPayload, AptosError> {
+        let recipient_addr = recipient.copied().unwrap_or(*token_address);
+        let module_addr = parse_module_address(&self.confidential_asset_module_address);
 
-        Ok(TransactionPayload {
-            module_address: self.confidential_asset_module_address.clone(),
-            module_name: MODULE_NAME.to_string(),
-            function_name: "deposit_to".to_string(),
-            type_arguments: vec![],
-            arguments: vec![
-                token_address.to_vec(),
-                recipient_addr.to_vec(),
-                amount.to_le_bytes().to_vec(),
+        Ok(EntryFunction::new(
+            aptos_sdk::types::MoveModuleId::new(module_addr, MODULE_NAME.to_string().into()),
+            "deposit_to",
+            vec![],
+            vec![
+                bcs_addr(token_address),
+                bcs_addr(&recipient_addr),
+                bcs::to_bytes(&amount).unwrap_or_default(),
             ],
-        })
+        ).into())
     }
 
-    /// Build a `withdraw_to` transaction.
+    /// Build a `withdraw_to` entry function payload.
     pub async fn withdraw(
         &self,
-        sender: &[u8; 32],
-        token_address: &[u8; 32],
+        sender: &AccountAddress,
+        token_address: &AccountAddress,
         amount: u64,
         sender_decryption_key: &TwistedEd25519PrivateKey,
-        recipient: Option<&[u8; 32]>,
-    ) -> Result<TransactionPayload, ViewFunctionError> {
-        validate_amount(amount)?;
+        recipient: Option<&AccountAddress>,
+    ) -> Result<TransactionPayload, AptosError> {
+        let sender_bytes = sender.into_bytes();
+        let token_bytes = token_address.into_bytes();
 
         // Get sender's available balance from chain
         let balance = get_balance(
-            &self.client,
+            self.client,
             sender,
             token_address,
             sender_decryption_key,
             Some(&self.confidential_asset_module_address),
         ).await?;
 
-        let chain_id = get_chain_id_byte_for_proofs(&self.client).await?;
-        let contract_bytes = hex::decode(&self.confidential_asset_module_address.trim_start_matches("0x"))
-            .unwrap_or_default();
+        let chain_id = get_chain_id_byte_for_proofs(self.client).await?;
+        let contract_address = parse_module_address(&self.confidential_asset_module_address);
 
         let confidential_withdraw = ConfidentialWithdraw::create(
             sender_decryption_key,
             balance.available.get_ciphertext(),
             amount,
             chain_id,
-            sender,
-            &contract_bytes,
-            token_address,
+            &sender_bytes,
+            contract_address.as_bytes(),
+            &token_bytes,
         );
 
         let (proofs, encrypted_amount_after_withdraw) = confidential_withdraw.authorize_withdrawal();
 
         let recipient_addr = recipient.copied().unwrap_or(*sender);
+        let module_addr = parse_module_address(&self.confidential_asset_module_address);
 
-        Ok(TransactionPayload {
-            module_address: self.confidential_asset_module_address.clone(),
-            module_name: MODULE_NAME.to_string(),
-            function_name: "withdraw_to".to_string(),
-            type_arguments: vec![],
-            arguments: vec![
-                token_address.to_vec(),
-                recipient_addr.to_vec(),
-                amount.to_le_bytes().to_vec(),
+        Ok(EntryFunction::new(
+            aptos_sdk::types::MoveModuleId::new(module_addr, MODULE_NAME.to_string().into()),
+            "withdraw_to",
+            vec![],
+            vec![
+                bcs_addr(token_address),
+                bcs_addr(&recipient_addr),
+                bcs::to_bytes(&amount).unwrap_or_default(),
                 encrypted_amount_after_withdraw.get_ciphertext_bytes(),
                 proofs.range_proof,
                 ConfidentialWithdraw::serialize_sigma_proof(&proofs.sigma_proof),
             ],
-        })
+        ).into())
     }
 
-    /// Build a `rollover_pending_balance` (or `rollover_pending_balance_and_freeze`) transaction.
+    /// Build a `rollover_pending_balance` (or `rollover_pending_balance_and_freeze`) entry function payload.
     pub async fn rollover_pending_balance(
         &self,
-        sender: &[u8; 32],
-        token_address: &[u8; 32],
+        sender: &AccountAddress,
+        token_address: &AccountAddress,
         with_freeze_balance: bool,
         check_normalized: bool,
-    ) -> Result<TransactionPayload, ViewFunctionError> {
+    ) -> Result<TransactionPayload, AptosError> {
         if check_normalized {
             let is_norm = is_balance_normalized(
-                &self.client,
+                self.client,
                 sender,
                 token_address,
                 Some(&self.confidential_asset_module_address),
             ).await?;
             if !is_norm {
-                return Err(ViewFunctionError::RpcError(
-                    "Balance must be normalized before rollover".into(),
+                return Err(AptosError::unexpected_response(
+                    "Balance must be normalized before rollover",
                 ));
             }
         }
@@ -185,38 +198,41 @@ impl<C: MovementClient + Sync> ConfidentialAssetTransactionBuilder<C> {
             "rollover_pending_balance"
         };
 
-        Ok(TransactionPayload {
-            module_address: self.confidential_asset_module_address.clone(),
-            module_name: MODULE_NAME.to_string(),
-            function_name: function_name.to_string(),
-            type_arguments: vec![],
-            arguments: vec![token_address.to_vec()],
-        })
+        let module_addr = parse_module_address(&self.confidential_asset_module_address);
+
+        Ok(EntryFunction::new(
+            aptos_sdk::types::MoveModuleId::new(module_addr, MODULE_NAME.to_string().into()),
+            function_name,
+            vec![],
+            vec![bcs_addr(token_address)],
+        ).into())
     }
 
-    /// Build a `confidential_transfer` transaction.
+    /// Build a `confidential_transfer` entry function payload.
     pub async fn transfer(
         &self,
-        sender: &[u8; 32],
-        recipient: &[u8; 32],
-        token_address: &[u8; 32],
+        sender: &AccountAddress,
+        recipient: &AccountAddress,
+        token_address: &AccountAddress,
         amount: u64,
         sender_decryption_key: &TwistedEd25519PrivateKey,
         additional_auditor_encryption_keys: &[TwistedEd25519PublicKey],
         sender_auditor_hint: &[u8],
-    ) -> Result<TransactionPayload, ViewFunctionError> {
-        validate_amount(amount)?;
+    ) -> Result<TransactionPayload, AptosError> {
         if sender_auditor_hint.len() > MAX_SENDER_AUDITOR_HINT_BYTES {
-            return Err(ViewFunctionError::RpcError(
+            return Err(AptosError::unexpected_response(
                 format!("senderAuditorHint exceeds MAX_SENDER_AUDITOR_HINT_BYTES ({})", MAX_SENDER_AUDITOR_HINT_BYTES),
             ));
         }
 
-        let chain_id = get_chain_id_byte_for_proofs(&self.client).await?;
+        let sender_bytes = sender.into_bytes();
+        let token_bytes = token_address.into_bytes();
+
+        let chain_id = get_chain_id_byte_for_proofs(self.client).await?;
 
         // Get auditor public key for the token
         let global_auditor_pub_key = get_global_auditor_encryption_key(
-            &self.client,
+            self.client,
             token_address,
             Some(&self.confidential_asset_module_address),
         ).await?;
@@ -226,7 +242,7 @@ impl<C: MovementClient + Sync> ConfidentialAssetTransactionBuilder<C> {
             sender_decryption_key.public_key()
         } else {
             get_encryption_key(
-                &self.client,
+                self.client,
                 recipient,
                 token_address,
                 Some(&self.confidential_asset_module_address),
@@ -235,26 +251,25 @@ impl<C: MovementClient + Sync> ConfidentialAssetTransactionBuilder<C> {
 
         // Check if recipient balance is frozen
         let is_frozen = is_pending_balance_frozen(
-            &self.client,
+            self.client,
             recipient,
             token_address,
             Some(&self.confidential_asset_module_address),
         ).await?;
         if is_frozen {
-            return Err(ViewFunctionError::RpcError("Recipient balance is frozen".into()));
+            return Err(AptosError::unexpected_response("Recipient balance is frozen"));
         }
 
         // Get sender's available balance
         let balance = get_balance(
-            &self.client,
+            self.client,
             sender,
             token_address,
             sender_decryption_key,
             Some(&self.confidential_asset_module_address),
         ).await?;
 
-        let contract_bytes = hex::decode(&self.confidential_asset_module_address.trim_start_matches("0x"))
-            .unwrap_or_default();
+        let contract_address = parse_module_address(&self.confidential_asset_module_address);
 
         // Assemble auditor keys
         let mut auditor_keys: Vec<TwistedEd25519PublicKey> = vec![];
@@ -270,9 +285,9 @@ impl<C: MovementClient + Sync> ConfidentialAssetTransactionBuilder<C> {
             &recipient_encryption_key,
             &auditor_keys,
             chain_id,
-            sender,
-            &contract_bytes,
-            token_address,
+            &sender_bytes,
+            contract_address.as_bytes(),
+            &token_bytes,
             sender_auditor_hint,
         );
 
@@ -287,14 +302,15 @@ impl<C: MovementClient + Sync> ConfidentialAssetTransactionBuilder<C> {
             .flat_map(|cb| cb.get_ciphertext_bytes())
             .collect();
 
-        Ok(TransactionPayload {
-            module_address: self.confidential_asset_module_address.clone(),
-            module_name: MODULE_NAME.to_string(),
-            function_name: "confidential_transfer".to_string(),
-            type_arguments: vec![],
-            arguments: vec![
-                token_address.to_vec(),
-                recipient.to_vec(),
+        let module_addr = parse_module_address(&self.confidential_asset_module_address);
+
+        Ok(EntryFunction::new(
+            aptos_sdk::types::MoveModuleId::new(module_addr, MODULE_NAME.to_string().into()),
+            "confidential_transfer",
+            vec![],
+            vec![
+                bcs_addr(token_address),
+                bcs_addr(recipient),
                 encrypted_amount_after_transfer.get_ciphertext_bytes(),
                 confidential_transfer.transfer_amount_encrypted_by_sender().get_ciphertext_bytes(),
                 encrypted_amount_by_recipient.get_ciphertext_bytes(),
@@ -305,29 +321,29 @@ impl<C: MovementClient + Sync> ConfidentialAssetTransactionBuilder<C> {
                 ConfidentialTransfer::serialize_sigma_proof(&proofs.sigma_proof),
                 sender_auditor_hint.to_vec(),
             ],
-        })
+        ).into())
     }
 
-    /// Build a `rotate_encryption_key` (or `rotate_encryption_key_and_unfreeze`) transaction.
+    /// Build a `rotate_encryption_key` (or `rotate_encryption_key_and_unfreeze`) entry function payload.
     pub async fn rotate_encryption_key(
         &self,
-        sender: &[u8; 32],
+        sender: &AccountAddress,
         sender_decryption_key: &TwistedEd25519PrivateKey,
         new_sender_decryption_key: &TwistedEd25519PrivateKey,
-        token_address: &[u8; 32],
+        token_address: &AccountAddress,
         check_pending_balance_empty: bool,
-    ) -> Result<TransactionPayload, ViewFunctionError> {
-        let chain_id = get_chain_id_byte_for_proofs(&self.client).await?;
+    ) -> Result<TransactionPayload, AptosError> {
+        let chain_id = get_chain_id_byte_for_proofs(self.client).await?;
 
         let is_frozen = is_pending_balance_frozen(
-            &self.client,
+            self.client,
             sender,
             token_address,
             Some(&self.confidential_asset_module_address),
         ).await?;
 
         let balance = get_balance(
-            &self.client,
+            self.client,
             sender,
             token_address,
             sender_decryption_key,
@@ -335,22 +351,23 @@ impl<C: MovementClient + Sync> ConfidentialAssetTransactionBuilder<C> {
         ).await?;
 
         if check_pending_balance_empty && balance.pending_balance() > 0 {
-            return Err(ViewFunctionError::RpcError(
-                "Pending balance must be 0 before rotating encryption key".into(),
+            return Err(AptosError::unexpected_response(
+                "Pending balance must be 0 before rotating encryption key",
             ));
         }
 
-        let contract_bytes = hex::decode(&self.confidential_asset_module_address.trim_start_matches("0x"))
-            .unwrap_or_default();
+        let sender_bytes = sender.into_bytes();
+        let token_bytes = token_address.into_bytes();
+        let contract_address = parse_module_address(&self.confidential_asset_module_address);
 
         let key_rotation = ConfidentialKeyRotation::create(
             sender_decryption_key,
             new_sender_decryption_key,
             &balance.available,
             chain_id,
-            sender,
-            &contract_bytes,
-            token_address,
+            &sender_bytes,
+            contract_address.as_bytes(),
+            &token_bytes,
         );
 
         let (proofs, new_encrypted_available_balance) = key_rotation.authorize_key_rotation();
@@ -362,59 +379,56 @@ impl<C: MovementClient + Sync> ConfidentialAssetTransactionBuilder<C> {
             "rotate_encryption_key"
         };
 
-        Ok(TransactionPayload {
-            module_address: self.confidential_asset_module_address.clone(),
-            module_name: MODULE_NAME.to_string(),
-            function_name: method.to_string(),
-            type_arguments: vec![],
-            arguments: vec![
-                token_address.to_vec(),
+        let module_addr = parse_module_address(&self.confidential_asset_module_address);
+
+        Ok(EntryFunction::new(
+            aptos_sdk::types::MoveModuleId::new(module_addr, MODULE_NAME.to_string().into()),
+            method,
+            vec![],
+            vec![
+                bcs_addr(token_address),
                 new_public_key_bytes.to_vec(),
                 new_encrypted_available_balance.get_ciphertext_bytes(),
                 proofs.range_proof,
                 ConfidentialKeyRotation::serialize_sigma_proof(&proofs.sigma_proof),
             ],
-        })
+        ).into())
     }
 
-    /// Build a `normalize_balance` transaction.
+    /// Build a `normalize_balance` entry function payload.
     pub async fn normalize_balance(
         &self,
-        sender: &[u8; 32],
+        sender: &AccountAddress,
         sender_decryption_key: &TwistedEd25519PrivateKey,
-        token_address: &[u8; 32],
-    ) -> Result<TransactionPayload, ViewFunctionError> {
-        let chain_id = get_chain_id_byte_for_proofs(&self.client).await?;
+        token_address: &AccountAddress,
+    ) -> Result<TransactionPayload, AptosError> {
+        let chain_id = get_chain_id_byte_for_proofs(self.client).await?;
 
         let balance = get_balance(
-            &self.client,
+            self.client,
             sender,
             token_address,
             sender_decryption_key,
             Some(&self.confidential_asset_module_address),
         ).await?;
 
-        let contract_bytes = hex::decode(&self.confidential_asset_module_address.trim_start_matches("0x"))
-            .unwrap_or_default();
+        let sender_bytes = sender.into_bytes();
+        let token_bytes = token_address.into_bytes();
+        let contract_address = parse_module_address(&self.confidential_asset_module_address);
 
         let normalization = ConfidentialNormalization::create(
             sender_decryption_key,
             &balance.available,
             chain_id,
-            sender,
-            &contract_bytes,
-            token_address,
+            &sender_bytes,
+            contract_address.as_bytes(),
+            &token_bytes,
         );
 
         normalization.create_transaction_payload(
-            sender,
+            &sender_bytes,
             &self.confidential_asset_module_address,
-            token_address,
+            &token_bytes,
         )
     }
-}
-
-fn validate_amount(amount: u64) -> Result<(), ViewFunctionError> {
-    // u64 is always >= 0, so we only need to check for zero if desired
-    Ok(())
 }
