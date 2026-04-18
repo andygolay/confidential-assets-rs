@@ -1,5 +1,3 @@
-`src/crypto/range_proof.rs`:
-
 // Copyright © Move Industries
 // SPDX-License-Identifier: Apache-2.0
 

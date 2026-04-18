@@ -1,4 +1,3 @@
-
 // Tests for Fiat-Shamir hashing
 // Ported from confidential-assets/tests/units/fiatShamir.test.ts
 
