@@ -1,4 +1,3 @@
-src/crypto/chunked_amount.rs:
 // Copyright © Move Industries
 // SPDX-License-Identifier: Apache-2.0
 /// Number of bits per chunk.

@@ -1,4 +1,3 @@
-src/crypto/encrypted_amount.rs:
 // Copyright © Move Industries
 // SPDX-License-Identifier: Apache-2.0
 use curve25519_dalek::scalar::Scalar;

@@ -1,4 +1,3 @@
-src/crypto/confidential_key_rotation.rs:
  (2/3)
 // Copyright © Move Industries
 // SPDX-License-Identifier: Apache-2.0
