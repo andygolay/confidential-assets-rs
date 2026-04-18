@@ -124,8 +124,8 @@ impl TwistedElGamal {
     /// Actually, the simplest approach: we know dk_old, we decrypt v*H, then re-encrypt.
     /// But that loses the homomorphic property.
     ///
-    /// The actual key rotation in the TS code:
-    /// It creates new randomness and re-encrypts from the decrypted value.
-    /// See confidential_key_rotation.ts for the actual logic.
+    // The actual key rotation in the TS code:
+    // It creates new randomness and re-encrypts from the decrypted value.
+    // See confidential_key_rotation.ts for the actual logic.
 }
 

@@ -1,8 +1,9 @@
 // Tests for ElGamal encryption/decryption
 // Ported from non-skipped tests in confidential-assets/tests/units/kangaroo-decryption.test.ts
-use confidential_assets::crypto::twisted_ed25519::TwistedEd25519PrivateKey;
 use confidential_assets::crypto::encrypted_amount::EncryptedAmount;
+use confidential_assets::crypto::twisted_ed25519::TwistedEd25519PrivateKey;
 use rand::Rng;
+
 fn generate_random_integer(bits: u32) -> u128 {
     let mut rng = rand::thread_rng();
     let max: u128 = (1u128 << bits) - 1;
@@ -12,6 +13,7 @@ fn generate_random_integer(bits: u32) -> u128 {
     }
     rng.gen_range(0..=max)
 }
+
 fn execution_balance(bits: u32, length: usize) -> Vec<(u128, u128)> {
     let mut results = Vec::with_capacity(length);
     for _ in 0..length {
@@ -24,6 +26,7 @@ fn execution_balance(bits: u32, length: usize) -> Vec<(u128, u128)> {
     }
     results
 }
+
 #[test]
 fn decrypt_16_bit_amounts() {
     let results = execution_balance(16, 50);
@@ -31,6 +34,7 @@ fn decrypt_16_bit_amounts() {
         assert_eq!(expected, actual);
     }
 }
+
 #[test]
 fn decrypt_32_bit_amounts() {
     let results = execution_balance(32, 50);
@@ -38,13 +42,15 @@ fn decrypt_32_bit_amounts() {
         assert_eq!(expected, actual);
     }
 }
+
 #[test]
 fn decrypt_48_bit_amounts() {
     let results = execution_balance(48, 50);
-for (expected, actual) in &results {
+    for (expected, actual) in &results {
         assert_eq!(expected, actual);
     }
 }
+
 #[test]
 fn decrypt_64_bit_amounts() {
     let results = execution_balance(64, 50);
@@ -52,6 +58,7 @@ fn decrypt_64_bit_amounts() {
         assert_eq!(expected, actual);
     }
 }
+
 #[test]
 fn decrypt_96_bit_amounts() {
     let results = execution_balance(96, 50);
@@ -59,6 +66,7 @@ fn decrypt_96_bit_amounts() {
         assert_eq!(expected, actual);
     }
 }
+
 #[test]
 fn decrypt_128_bit_amounts() {
     let results = execution_balance(128, 50);
@@ -66,4 +74,3 @@ fn decrypt_128_bit_amounts() {
         assert_eq!(expected, actual);
     }
 }
-
