@@ -150,17 +150,21 @@ impl<'a> ConfidentialAssetTransactionBuilder<'a> {
         let contract_address = parse_module_address(&self.confidential_asset_module_address);
 
         let confidential_withdraw = ConfidentialWithdraw::create(
-            sender_decryption_key,
+            sender_decryption_key.clone(),
             balance.available.get_ciphertext(),
-            amount,
+            amount as u128,
             chain_id,
             &sender_bytes,
             contract_address.as_bytes(),
             &token_bytes,
-        );
+        )
+        .await
+        .map_err(|e| AptosError::Internal(format!("withdraw create failed: {}", e)))?;
 
-        let (proofs, encrypted_amount_after_withdraw) =
-            confidential_withdraw.authorize_withdrawal();
+        let (proofs, range_proof_bytes, encrypted_amount_after_withdraw) = confidential_withdraw
+            .authorize_withdrawal()
+            .await
+            .map_err(|e| AptosError::Internal(format!("withdraw auth failed: {}", e)))?;
 
         let recipient_addr = recipient.copied().unwrap_or(*sender);
         let module_addr = parse_module_address(&self.confidential_asset_module_address);
@@ -177,8 +181,8 @@ impl<'a> ConfidentialAssetTransactionBuilder<'a> {
                 bcs_addr(&recipient_addr),
                 bcs::to_bytes(&amount).unwrap_or_default(),
                 encrypted_amount_after_withdraw.get_ciphertext_bytes(),
-                proofs.range_proof,
-                ConfidentialWithdraw::serialize_sigma_proof(&proofs.sigma_proof),
+                range_proof_bytes,
+                ConfidentialWithdraw::serialize_sigma_proof(&proofs),
             ],
         )
         .into())
@@ -202,7 +206,7 @@ impl<'a> ConfidentialAssetTransactionBuilder<'a> {
             .await?;
             if !is_norm {
                 return Err(AptosError::Internal(
-                    "Balance must be normalized before rollover",
+                    "Balance must be normalized before rollover".to_string(),
                 ));
             }
         }
@@ -305,24 +309,30 @@ impl<'a> ConfidentialAssetTransactionBuilder<'a> {
         auditor_keys.extend_from_slice(additional_auditor_encryption_keys);
 
         let confidential_transfer = ConfidentialTransfer::create(
-            sender_decryption_key,
-            balance.available.get_ciphertext(),
-            amount,
-            &recipient_encryption_key,
-            &auditor_keys,
+            sender_decryption_key.clone(),
+            balance.available.get_amount(),
+            balance.available.randomness().to_vec(),
+            amount as u128,
+            recipient_encryption_key.clone(),
+            auditor_keys.clone(),
             chain_id,
             &sender_bytes,
             contract_address.as_bytes(),
             &token_bytes,
             sender_auditor_hint,
-        );
+        )
+        .map_err(|e| AptosError::Internal(format!("transfer create failed: {}", e)))?;
 
         let (
-            proofs,
+            sigma_proof,
+            range_proof,
             encrypted_amount_after_transfer,
             encrypted_amount_by_recipient,
             auditors_cb_list,
-        ) = confidential_transfer.authorize_transfer();
+        ) = confidential_transfer
+            .authorize_transfer()
+            .await
+            .map_err(|e| AptosError::Internal(format!("transfer auth failed: {}", e)))?;
 
         // Concatenate auditor keys and balances
         let auditor_encryption_keys_bytes: Vec<u8> = auditor_keys
@@ -333,6 +343,10 @@ impl<'a> ConfidentialAssetTransactionBuilder<'a> {
             .iter()
             .flat_map(|cb| cb.get_ciphertext_bytes())
             .collect();
+
+        let transfer_amount_encrypted = confidential_transfer
+            .transfer_amount_encrypted_by_sender()
+            .get_ciphertext_bytes();
 
         let module_addr = parse_module_address(&self.confidential_asset_module_address);
 
@@ -347,15 +361,13 @@ impl<'a> ConfidentialAssetTransactionBuilder<'a> {
                 bcs_addr(token_address),
                 bcs_addr(recipient),
                 encrypted_amount_after_transfer.get_ciphertext_bytes(),
-                confidential_transfer
-                    .transfer_amount_encrypted_by_sender()
-                    .get_ciphertext_bytes(),
+                transfer_amount_encrypted,
                 encrypted_amount_by_recipient.get_ciphertext_bytes(),
                 auditor_encryption_keys_bytes,
                 auditor_balances_bytes,
-                proofs.range_proof.range_proof_new_balance,
-                proofs.range_proof.range_proof_amount,
-                ConfidentialTransfer::serialize_sigma_proof(&proofs.sigma_proof),
+                range_proof.range_proof_new_balance,
+                range_proof.range_proof_amount,
+                ConfidentialTransfer::serialize_sigma_proof(&sigma_proof),
                 sender_auditor_hint.to_vec(),
             ],
         )
@@ -392,7 +404,7 @@ impl<'a> ConfidentialAssetTransactionBuilder<'a> {
 
         if check_pending_balance_empty && balance.pending_balance() > 0 {
             return Err(AptosError::Internal(
-                "Pending balance must be 0 before rotating encryption key",
+                "Pending balance must be 0 before rotating encryption key".to_string(),
             ));
         }
 
@@ -401,16 +413,19 @@ impl<'a> ConfidentialAssetTransactionBuilder<'a> {
         let contract_address = parse_module_address(&self.confidential_asset_module_address);
 
         let key_rotation = ConfidentialKeyRotation::create(
-            sender_decryption_key,
-            new_sender_decryption_key,
-            &balance.available,
+            sender_decryption_key.clone(),
+            new_sender_decryption_key.clone(),
+            balance.available.clone(),
             chain_id,
             &sender_bytes,
             contract_address.as_bytes(),
             &token_bytes,
         );
 
-        let (proofs, new_encrypted_available_balance) = key_rotation.authorize_key_rotation();
+        let (sigma_proof, range_proof_bytes, new_encrypted_available_balance) = key_rotation
+            .authorize_key_rotation()
+            .await
+            .map_err(|e| AptosError::Internal(format!("key rotation auth failed: {}", e)))?;
 
         let new_public_key_bytes = new_sender_decryption_key.public_key().to_bytes();
         let method = if is_frozen {
@@ -432,8 +447,8 @@ impl<'a> ConfidentialAssetTransactionBuilder<'a> {
                 bcs_addr(token_address),
                 new_public_key_bytes.to_vec(),
                 new_encrypted_available_balance.get_ciphertext_bytes(),
-                proofs.range_proof,
-                ConfidentialKeyRotation::serialize_sigma_proof(&proofs.sigma_proof),
+                range_proof_bytes,
+                ConfidentialKeyRotation::serialize_sigma_proof(&sigma_proof),
             ],
         )
         .into())
@@ -462,18 +477,33 @@ impl<'a> ConfidentialAssetTransactionBuilder<'a> {
         let contract_address = parse_module_address(&self.confidential_asset_module_address);
 
         let normalization = ConfidentialNormalization::create(
-            sender_decryption_key,
-            &balance.available,
+            sender_decryption_key.clone(),
+            balance.available.clone(),
             chain_id,
             &sender_bytes,
             contract_address.as_bytes(),
             &token_bytes,
         );
 
-        normalization.create_transaction_payload(
-            &sender_bytes,
-            &self.confidential_asset_module_address,
-            &token_bytes,
+        let sigma_proof = normalization.gen_sigma_proof();
+        let new_balance = normalization
+            .normalized_encrypted_available_balance()
+            .clone();
+
+        let module_addr = parse_module_address(&self.confidential_asset_module_address);
+        Ok(EntryFunction::new(
+            MoveModuleId::new(
+                module_addr,
+                Identifier::new(MODULE_NAME).expect("valid module name"),
+            ),
+            "confidential_normalize",
+            vec![],
+            vec![
+                bcs_addr(token_address),
+                new_balance.get_ciphertext_bytes(),
+                ConfidentialNormalization::serialize_sigma_proof(&sigma_proof),
+            ],
         )
+        .into())
     }
 }

@@ -196,7 +196,9 @@ pub async fn get_global_auditor_encryption_key(
     match result {
         Some(bytes) if !bytes.is_empty() => {
             match {
-                let arr: [u8; 32] = bytes.try_into().map_err(|_| AptosError::Internal("auditor key not 32 bytes".to_string()))?;
+                let arr: [u8; 32] = bytes
+                    .try_into()
+                    .map_err(|_| AptosError::Internal("auditor key not 32 bytes".to_string()))?;
                 TwistedEd25519PublicKey::from_bytes(&arr)
             } {
                 Ok(key) => Ok(Some(key)),
@@ -232,12 +234,14 @@ fn deserialize_ciphertext_chunks(
 
     let mut ciphertexts = Vec::new();
     for chunk in bytes.chunks_exact(64) {
-        use curve25519_dalek::ristretto::RistrettoPoint;
         use curve25519_dalek::ristretto::CompressedRistretto;
+        use curve25519_dalek::ristretto::RistrettoPoint;
         let left = CompressedRistretto::from_slice(&chunk[..32])
+            .map_err(|e| AptosError::Internal(format!("invalid left point: {}", e)))?
             .decompress()
             .ok_or_else(|| AptosError::Internal("invalid left point in ciphertext".to_string()))?;
         let right = CompressedRistretto::from_slice(&chunk[32..])
+            .map_err(|e| AptosError::Internal(format!("invalid right point: {}", e)))?
             .decompress()
             .ok_or_else(|| AptosError::Internal("invalid right point in ciphertext".to_string()))?;
         ciphertexts.push(TwistedElGamalCiphertext::new(left, right));
