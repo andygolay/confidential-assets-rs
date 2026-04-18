@@ -1,4 +1,3 @@
- (2/3)
 // Copyright © Move Industries
 // SPDX-License-Identifier: Apache-2.0
 use curve25519_dalek::ristretto::RistrettoPoint;
