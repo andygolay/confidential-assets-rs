@@ -110,20 +110,20 @@ impl TwistedElGamal {
     pub fn sub(a: &TwistedElGamalCiphertext, b: &TwistedElGamalCiphertext) -> TwistedElGamalCiphertext {
         TwistedElGamalCiphertext::new(a.c - b.c, a.d - b.d)
     }
-    /// Re-encrypt a ciphertext under a new public key (for key rotation).
-    /// Given C = r*G + v*H, D = r*old_pk
-    /// New: C' = C + r'*G, D' = D + r'*new_pk
-    /// Wait, that's not quite right. For key rotation we need:
-    /// C stays the same (amount doesn't change)
-    /// D' = r * new_pk
-    /// But we don't know r. So we use:
-    /// C' = C + delta_r * G  (but then we change the randomness)
-    /// Actually the TS code does it differently.
-    ///
-    /// For re-keying: new_D = old_D + (old_pk_inv * new_pk - 1) * ...
-    /// Actually, the simplest approach: we know dk_old, we decrypt v*H, then re-encrypt.
-    /// But that loses the homomorphic property.
-    ///
+    // Re-encrypt a ciphertext under a new public key (for key rotation).
+    // Given C = r*G + v*H, D = r*old_pk
+    // New: C' = C + r'*G, D' = D + r'*new_pk
+    // Wait, that's not quite right. For key rotation we need:
+    // C stays the same (amount doesn't change)
+    // D' = r * new_pk
+    // But we don't know r. So we use:
+    // C' = C + delta_r * G  (but then we change the randomness)
+    // Actually the TS code does it differently.
+    //
+    // For re-keying: new_D = old_D + (old_pk_inv * new_pk - 1) * ...
+    // Actually, the simplest approach: we know dk_old, we decrypt v*H, then re-encrypt.
+    // But that loses the homomorphic property.
+    //
     // The actual key rotation in the TS code:
     // It creates new randomness and re-encrypts from the decrypted value.
     // See confidential_key_rotation.ts for the actual logic.
