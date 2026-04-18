@@ -1,7 +1,9 @@
 // Tests for confidential proof generation and verification
 // Ported from confidential-assets/tests/units/confidentialProofs.test.ts
 // Only non-skipped tests are included.
-use confidential_assets::crypto::chunked_amount::{ChunkedAmount, AVAILABLE_BALANCE_CHUNK_COUNT, CHUNK_BITS};
+use confidential_assets::crypto::chunked_amount::{
+    ChunkedAmount, AVAILABLE_BALANCE_CHUNK_COUNT, CHUNK_BITS,
+};
 use confidential_assets::crypto::confidential_key_rotation::ConfidentialKeyRotation;
 use confidential_assets::crypto::confidential_normalization::ConfidentialNormalization;
 use confidential_assets::crypto::confidential_transfer::ConfidentialTransfer;

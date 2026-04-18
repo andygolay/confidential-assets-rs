@@ -8,9 +8,11 @@
 //!
 //! TODO: Switch `aptos_sdk::Aptos` → `movement_sdk::Movement` once the fork is ready.
 
-use aptos_sdk::{Aptos, AptosError, types::AccountAddress};
-use crate::crypto::{TwistedEd25519PublicKey, EncryptedAmount, TwistedElGamalCiphertext};
 use crate::consts::{DEFAULT_CONFIDENTIAL_COIN_MODULE_ADDRESS, MODULE_NAME};
+use crate::crypto::{
+    encrypted_amount::EncryptedAmount, TwistedEd25519PublicKey, TwistedElGamalCiphertext,
+};
+use aptos_sdk::{types::AccountAddress, Aptos, AptosError};
 
 /// Represents a confidential balance with both available and pending encrypted amounts.
 #[derive(Debug, Clone)]
@@ -88,8 +90,10 @@ pub async fn get_balance(
     let pending_ct = deserialize_ciphertext_chunks(&pending_bytes)?;
     let available_ct = deserialize_ciphertext_chunks(&available_bytes)?;
 
-    let pending = EncryptedAmount::from_ciphertext_and_private_key(&pending_ct, decryption_key);
-    let available = EncryptedAmount::from_ciphertext_and_private_key(&available_ct, decryption_key);
+    let pending = EncryptedAmount::from_ciphertext_and_private_key(&pending_ct, decryption_key)
+        .map_err(|e| AptosError::Internal(format!("failed to decrypt pending: {}", e)))?;
+    let available = EncryptedAmount::from_ciphertext_and_private_key(&available_ct, decryption_key)
+        .map_err(|e| AptosError::Internal(format!("failed to decrypt available: {}", e)))?;
 
     Ok(ConfidentialBalance { available, pending })
 }
@@ -103,11 +107,13 @@ pub async fn is_balance_normalized(
     module_address: Option<&str>,
 ) -> Result<bool, AptosError> {
     let mod_addr = module_address.unwrap_or(DEFAULT_CONFIDENTIAL_COIN_MODULE_ADDRESS);
-    client.view_bcs(
-        &func_path(mod_addr, "is_normalized"),
-        vec![],
-        vec![bcs_address(account_address), bcs_address(token_address)],
-    ).await
+    client
+        .view_bcs(
+            &func_path(mod_addr, "is_normalized"),
+            vec![],
+            vec![bcs_address(account_address), bcs_address(token_address)],
+        )
+        .await
 }
 
 /// Check if a user's pending balance is frozen.
@@ -119,11 +125,13 @@ pub async fn is_pending_balance_frozen(
     module_address: Option<&str>,
 ) -> Result<bool, AptosError> {
     let mod_addr = module_address.unwrap_or(DEFAULT_CONFIDENTIAL_COIN_MODULE_ADDRESS);
-    client.view_bcs(
-        &func_path(mod_addr, "is_frozen"),
-        vec![],
-        vec![bcs_address(account_address), bcs_address(token_address)],
-    ).await
+    client
+        .view_bcs(
+            &func_path(mod_addr, "is_frozen"),
+            vec![],
+            vec![bcs_address(account_address), bcs_address(token_address)],
+        )
+        .await
 }
 
 /// Check if a user has registered a confidential asset balance.
@@ -135,11 +143,13 @@ pub async fn has_user_registered(
     module_address: Option<&str>,
 ) -> Result<bool, AptosError> {
     let mod_addr = module_address.unwrap_or(DEFAULT_CONFIDENTIAL_COIN_MODULE_ADDRESS);
-    client.view_bcs(
-        &func_path(mod_addr, "has_confidential_asset_store"),
-        vec![],
-        vec![bcs_address(account_address), bcs_address(token_address)],
-    ).await
+    client
+        .view_bcs(
+            &func_path(mod_addr, "has_confidential_asset_store"),
+            vec![],
+            vec![bcs_address(account_address), bcs_address(token_address)],
+        )
+        .await
 }
 
 /// Get the encryption key for an account for a given token.
@@ -153,14 +163,21 @@ pub async fn get_encryption_key(
     let mod_addr = module_address.unwrap_or(DEFAULT_CONFIDENTIAL_COIN_MODULE_ADDRESS);
 
     // View returns `CompressedPubkey { point: { data: bytes } }`
-    let result: Vec<u8> = client.view_bcs(
-        &func_path(mod_addr, "encryption_key"),
-        vec![],
-        vec![bcs_address(account_address), bcs_address(token_address)],
-    ).await?;
+    let result: Vec<u8> = client
+        .view_bcs(
+            &func_path(mod_addr, "encryption_key"),
+            vec![],
+            vec![bcs_address(account_address), bcs_address(token_address)],
+        )
+        .await?;
 
-    TwistedEd25519PublicKey::from_bytes(&result)
-        .map_err(|e| AptosError::unexpected_response(format!("invalid encryption key: {}", e)))
+    {
+        let arr: [u8; 32] = result
+            .try_into()
+            .map_err(|_| AptosError::Internal("encryption key not 32 bytes".to_string()))?;
+        TwistedEd25519PublicKey::from_bytes(&arr)
+    }
+    .map_err(|e| AptosError::Internal(format!("invalid encryption key: {}", e)))
 }
 
 /// Get the global auditor encryption key for a token, if set.
@@ -173,15 +190,20 @@ pub async fn get_global_auditor_encryption_key(
     let mod_addr = module_address.unwrap_or(DEFAULT_CONFIDENTIAL_COIN_MODULE_ADDRESS);
 
     // `get_auditor` returns `Option<CompressedPubkey>` — BCS-encoded
-    let result: Option<Vec<u8>> = client.view_bcs(
-        &func_path(mod_addr, "get_auditor"),
-        vec![],
-        vec![bcs_address(token_address)],
-    ).await?;
+    let result: Option<Vec<u8>> = client
+        .view_bcs(
+            &func_path(mod_addr, "get_auditor"),
+            vec![],
+            vec![bcs_address(token_address)],
+        )
+        .await?;
 
     match result {
         Some(bytes) if !bytes.is_empty() => {
-            match TwistedEd25519PublicKey::from_bytes(&bytes) {
+            match {
+                let arr: [u8; 32] = bytes.try_into().map_err(|_| "not 32 bytes")?;
+                TwistedEd25519PublicKey::from_bytes(&arr)
+            } {
                 Ok(key) => Ok(Some(key)),
                 Err(_) => Ok(None),
             }
@@ -193,31 +215,35 @@ pub async fn get_global_auditor_encryption_key(
 /// Get the chain ID byte used in Fiat-Shamir proof transcripts.
 // TODO: Switch `Aptos` → `Movement`
 pub async fn get_chain_id_byte_for_proofs(client: &Aptos) -> Result<u8, AptosError> {
-    let id: u8 = client.view_bcs(
-        "0x1::chain_id::get",
-        vec![],
-        vec![],
-    ).await?;
+    let id: u8 = client
+        .view_bcs("0x1::chain_id::get", vec![], vec![])
+        .await?;
     Ok(id)
 }
 
 /// Deserialize BCS-encoded ciphertext chunks from a view response.
 /// Each chunk is a pair of 32-byte Ristretto points (left, right).
-fn deserialize_ciphertext_chunks(bytes: &[u8]) -> Result<Vec<TwistedElGamalCiphertext>, AptosError> {
+fn deserialize_ciphertext_chunks(
+    bytes: &[u8],
+) -> Result<Vec<TwistedElGamalCiphertext>, AptosError> {
     // The on-chain response is a `CompressedConfidentialBalance` containing
     // chunks of (left, right) pairs as 64-byte blocks.
     if bytes.len() % 64 != 0 {
-        return Err(AptosError::unexpected_response(
-            format!("ciphertext chunk size not multiple of 64 (got {})", bytes.len()),
-        ));
+        return Err(AptosError::Internal(format!(
+            "ciphertext chunk size not multiple of 64 (got {})",
+            bytes.len()
+        )));
     }
 
     let mut ciphertexts = Vec::new();
     for chunk in bytes.chunks_exact(64) {
-        let mut left = [0u8; 32];
-        let mut right = [0u8; 32];
-        left.copy_from_slice(&chunk[..32]);
-        right.copy_from_slice(&chunk[32..]);
+        use curve25519_dalek::ristretto::RistrettoPoint;
+        let mut left_bytes = [0u8; 32];
+        let mut right_bytes = [0u8; 32];
+        left_bytes.copy_from_slice(&chunk[..32]);
+        right_bytes.copy_from_slice(&chunk[32..]);
+        let left = RistrettoPoint::from_uniform_bytes(&left_bytes);
+        let right = RistrettoPoint::from_uniform_bytes(&right_bytes);
         ciphertexts.push(TwistedElGamalCiphertext::new(left, right));
     }
     Ok(ciphertexts)

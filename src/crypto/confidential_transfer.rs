@@ -1,18 +1,19 @@
-src/crypto/confidential_transfer.rs:
 // Copyright © Move Industries
 // SPDX-License-Identifier: Apache-2.0
-use curve25519_dalek::ristretto::RistrettoPoint;
-use curve25519_dalek::scalar::Scalar;
-use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
-use crate::crypto::twisted_ed25519::{TwistedEd25519PrivateKey, TwistedEd25519PublicKey};
-use crate::crypto::twisted_el_gamal::{TwistedElGamal, TwistedElGamalCiphertext};
+use crate::bcs::serialize_vector_u8;
+use crate::consts::{MAX_SENDER_AUDITOR_HINT_BYTES, PROTOCOL_ID_TRANSFER};
+use crate::crypto::chunked_amount::{
+    ChunkedAmount, AVAILABLE_BALANCE_CHUNK_COUNT, TRANSFER_AMOUNT_CHUNK_COUNT,
+};
 use crate::crypto::encrypted_amount::EncryptedAmount;
-use crate::crypto::chunked_amount::{ChunkedAmount, AVAILABLE_BALANCE_CHUNK_COUNT, TRANSFER_AMOUNT_CHUNK_COUNT};
 use crate::crypto::fiat_shamir::fiat_shamir_challenge_full;
 use crate::crypto::h_ristretto;
-use crate::consts::{PROTOCOL_ID_TRANSFER, MAX_SENDER_AUDITOR_HINT_BYTES};
+use crate::crypto::twisted_ed25519::{TwistedEd25519PrivateKey, TwistedEd25519PublicKey};
+use crate::crypto::twisted_el_gamal::{TwistedElGamal, TwistedElGamalCiphertext};
 use crate::utils::ed25519_gen_random;
-use crate::bcs::serialize_vector_u8;
+use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
+use curve25519_dalek::ristretto::RistrettoPoint;
+use curve25519_dalek::scalar::Scalar;
 /// Transfer sigma proof components.
 #[derive(Clone, Debug)]
 pub struct TransferSigmaProof {
@@ -96,7 +97,10 @@ impl ConfidentialTransfer {
         sender_auditor_hint: &[u8],
     ) -> Result<Self, String> {
         if sender_auditor_hint.len() > MAX_SENDER_AUDITOR_HINT_BYTES {
-            return Err(format!("senderAuditorHint exceeds MAX_SENDER_AUDITOR_HINT_BYTES ({})", MAX_SENDER_AUDITOR_HINT_BYTES));
+            return Err(format!(
+                "senderAuditorHint exceeds MAX_SENDER_AUDITOR_HINT_BYTES ({})",
+                MAX_SENDER_AUDITOR_HINT_BYTES
+            ));
         }
         if amount > sender_balance_amount {
             return Err("Insufficient balance for transfer".to_string());
@@ -114,15 +118,21 @@ impl ConfidentialTransfer {
         let transfer_ea_sender = EncryptedAmount::new(transfer_chunked_sender, sender_pk.clone());
         // Encrypt transfer amount under recipient's key
         let transfer_chunked_recipient = ChunkedAmount::from_transfer_amount(amount);
-        let transfer_ea_recipient = EncryptedAmount::new(transfer_chunked_recipient, recipient_encryption_key.clone());
+        let transfer_ea_recipient =
+            EncryptedAmount::new(transfer_chunked_recipient, recipient_encryption_key.clone());
         // Encrypt transfer amount under each auditor's key
         let auditor_eas: Option<Vec<EncryptedAmount>> = if auditor_encryption_keys.is_empty() {
             None
         } else {
-            Some(auditor_encryption_keys.iter().map(|aud_pk| {
-                let chunked = ChunkedAmount::from_transfer_amount(amount);
-                EncryptedAmount::new(chunked, aud_pk.clone())
-            }).collect())
+            Some(
+                auditor_encryption_keys
+                    .iter()
+                    .map(|aud_pk| {
+                        let chunked = ChunkedAmount::from_transfer_amount(amount);
+                        EncryptedAmount::new(chunked, aud_pk.clone())
+                    })
+                    .collect(),
+            )
         };
         Ok(Self {
             sender_decryption_key,
@@ -159,7 +169,7 @@ impl ConfidentialTransfer {
     }
     /// Get auditor encryption keys.
     pub fn auditor_encryption_keys(&self) -> &[TwistedEd25519PublicKey] {
-&self.auditor_encryption_keys
+        &self.auditor_encryption_keys
     }
     /// Generate the sigma proof for the transfer.
     pub fn gen_sigma_proof(&self) -> TransferSigmaProof {
@@ -169,42 +179,79 @@ impl ConfidentialTransfer {
         let sender_pk = self.sender_decryption_key.public_key();
         let recipient_pk = &self.recipient_encryption_key;
         // Transfer amount chunks (8) and balance chunks (4)
-        let amount_chunks = self.transfer_amount_encrypted_by_sender.chunked_amount().to_scalars();
-        let balance_chunks = self.sender_encrypted_available_balance_after_transfer.chunked_amount().to_scalars();
+        let amount_chunks = self
+            .transfer_amount_encrypted_by_sender
+            .chunked_amount()
+            .to_scalars();
+        let balance_chunks = self
+            .sender_encrypted_available_balance_after_transfer
+            .chunked_amount()
+            .to_scalars();
         // Random nonces
-        let k_alpha1: Vec<Scalar> = (0..TRANSFER_AMOUNT_CHUNK_COUNT).map(|_| ed25519_gen_random()).collect();
-        let k_alpha2: Vec<Scalar> = (0..AVAILABLE_BALANCE_CHUNK_COUNT).map(|_| ed25519_gen_random()).collect();
-        let k_x1: Vec<Scalar> = (0..TRANSFER_AMOUNT_CHUNK_COUNT).map(|_| ed25519_gen_random()).collect();
-        let k_x2: Vec<Scalar> = (0..TRANSFER_AMOUNT_CHUNK_COUNT).map(|_| ed25519_gen_random()).collect();
-        let k_x3: Vec<Scalar> = (0..AVAILABLE_BALANCE_CHUNK_COUNT).map(|_| ed25519_gen_random()).collect();
+        let k_alpha1: Vec<Scalar> = (0..TRANSFER_AMOUNT_CHUNK_COUNT)
+            .map(|_| ed25519_gen_random())
+            .collect();
+        let k_alpha2: Vec<Scalar> = (0..AVAILABLE_BALANCE_CHUNK_COUNT)
+            .map(|_| ed25519_gen_random())
+            .collect();
+        let k_x1: Vec<Scalar> = (0..TRANSFER_AMOUNT_CHUNK_COUNT)
+            .map(|_| ed25519_gen_random())
+            .collect();
+        let k_x2: Vec<Scalar> = (0..TRANSFER_AMOUNT_CHUNK_COUNT)
+            .map(|_| ed25519_gen_random())
+            .collect();
+        let k_x3: Vec<Scalar> = (0..AVAILABLE_BALANCE_CHUNK_COUNT)
+            .map(|_| ed25519_gen_random())
+            .collect();
         let k_x4 = ed25519_gen_random();
         let k_x5 = ed25519_gen_random();
         let k_x6 = ed25519_gen_random();
         let k_x7: Vec<Scalar> = if self.auditor_encryption_keys.is_empty() {
             Vec::new()
         } else {
-            (0..AVAILABLE_BALANCE_CHUNK_COUNT).map(|_| ed25519_gen_random()).collect()
+            (0..AVAILABLE_BALANCE_CHUNK_COUNT)
+                .map(|_| ed25519_gen_random())
+                .collect()
         };
-        let k_x8: Vec<Scalar> = (0..AVAILABLE_BALANCE_CHUNK_COUNT).map(|_| ed25519_gen_random()).collect();
+        let k_x8: Vec<Scalar> = (0..AVAILABLE_BALANCE_CHUNK_COUNT)
+            .map(|_| ed25519_gen_random())
+            .collect();
         // Commitments
-        let alpha1_list: Vec<RistrettoPoint> = k_alpha1.iter()
+        let alpha1_list: Vec<RistrettoPoint> = k_alpha1
+            .iter()
             .zip(self.transfer_amount_encrypted_by_sender.randomness().iter())
             .map(|(k, r)| k * g + r * sender_pk.as_point())
             .collect();
-        let alpha2_list: Vec<RistrettoPoint> = k_alpha2.iter()
-            .zip(self.sender_encrypted_available_balance_after_transfer.randomness().iter())
+        let alpha2_list: Vec<RistrettoPoint> = k_alpha2
+            .iter()
+            .zip(
+                self.sender_encrypted_available_balance_after_transfer
+                    .randomness()
+                    .iter(),
+            )
             .map(|(k, r)| k * g + r * sender_pk.as_point())
             .collect();
-        let x1_list: Vec<RistrettoPoint> = k_x1.iter()
-            .zip(self.transfer_amount_encrypted_by_recipient.randomness().iter())
+        let x1_list: Vec<RistrettoPoint> = k_x1
+            .iter()
+            .zip(
+                self.transfer_amount_encrypted_by_recipient
+                    .randomness()
+                    .iter(),
+            )
             .map(|(k, r)| k * g + r * recipient_pk.as_point())
             .collect();
-        let x2_list: Vec<RistrettoPoint> = k_x2.iter()
+        let x2_list: Vec<RistrettoPoint> = k_x2
+            .iter()
             .zip(self.transfer_amount_encrypted_by_sender.randomness().iter())
             .map(|(k, r)| k * g + r * sender_pk.as_point())
             .collect();
-        let x3_list: Vec<RistrettoPoint> = k_x3.iter()
-            .zip(self.sender_encrypted_available_balance_after_transfer.randomness().iter())
+        let x3_list: Vec<RistrettoPoint> = k_x3
+            .iter()
+            .zip(
+                self.sender_encrypted_available_balance_after_transfer
+                    .randomness()
+                    .iter(),
+            )
             .map(|(k, r)| k * g + r * sender_pk.as_point())
             .collect();
         let x4 = k_x4 * g;
@@ -213,29 +260,54 @@ impl ConfidentialTransfer {
         let x7_list: Option<Vec<RistrettoPoint>> = if self.auditor_encryption_keys.is_empty() {
             None
         } else {
-            Some(k_x7.iter()
-                .zip(self.transfer_amount_encrypted_by_auditors.as_ref().unwrap()[0].randomness().iter())
-                .map(|(k, r)| k * g + r * self.auditor_encryption_keys[0].as_point())
-                .collect())
+            Some(
+                k_x7.iter()
+                    .zip(
+                        self.transfer_amount_encrypted_by_auditors.as_ref().unwrap()[0]
+                            .randomness()
+                            .iter(),
+                    )
+                    .map(|(k, r)| k * g + r * self.auditor_encryption_keys[0].as_point())
+                    .collect(),
+            )
         };
-        let x8_list: Vec<RistrettoPoint> = k_x8.iter()
-            .zip(self.sender_encrypted_available_balance_after_transfer.randomness().iter())
+        let x8_list: Vec<RistrettoPoint> = k_x8
+            .iter()
+            .zip(
+                self.sender_encrypted_available_balance_after_transfer
+                    .randomness()
+                    .iter(),
+            )
             .map(|(k, r)| k * g + r * sender_pk.as_point())
             .collect();
         // Build Fiat-Shamir transcript
         let mut transcript_data: Vec<u8> = Vec::new();
-        for p in &alpha1_list { transcript_data.extend_from_slice(&p.compress().to_bytes()); }
-        for p in &alpha2_list { transcript_data.extend_from_slice(&p.compress().to_bytes()); }
-        for p in &x1_list { transcript_data.extend_from_slice(&p.compress().to_bytes()); }
-for p in &x2_list { transcript_data.extend_from_slice(&p.compress().to_bytes()); }
-        for p in &x3_list { transcript_data.extend_from_slice(&p.compress().to_bytes()); }
+        for p in &alpha1_list {
+            transcript_data.extend_from_slice(&p.compress().to_bytes());
+        }
+        for p in &alpha2_list {
+            transcript_data.extend_from_slice(&p.compress().to_bytes());
+        }
+        for p in &x1_list {
+            transcript_data.extend_from_slice(&p.compress().to_bytes());
+        }
+        for p in &x2_list {
+            transcript_data.extend_from_slice(&p.compress().to_bytes());
+        }
+        for p in &x3_list {
+            transcript_data.extend_from_slice(&p.compress().to_bytes());
+        }
         transcript_data.extend_from_slice(&x4.compress().to_bytes());
         transcript_data.extend_from_slice(&x5.compress().to_bytes());
         transcript_data.extend_from_slice(&x6.compress().to_bytes());
         if let Some(ref x7s) = x7_list {
-            for p in x7s { transcript_data.extend_from_slice(&p.compress().to_bytes()); }
+            for p in x7s {
+                transcript_data.extend_from_slice(&p.compress().to_bytes());
+            }
         }
-        for p in &x8_list { transcript_data.extend_from_slice(&p.compress().to_bytes()); }
+        for p in &x8_list {
+            transcript_data.extend_from_slice(&p.compress().to_bytes());
+        }
         // Include sender_auditor_hint as BCS vector<u8>
         if !self.sender_auditor_hint.is_empty() {
             transcript_data.extend_from_slice(&serialize_vector_u8(&self.sender_auditor_hint));
@@ -249,11 +321,13 @@ for p in &x2_list { transcript_data.extend_from_slice(&p.compress().to_bytes());
             &[&transcript_data],
         );
         // Responses
-        let s_alpha1_list: Vec<Scalar> = k_alpha1.into_iter()
+        let s_alpha1_list: Vec<Scalar> = k_alpha1
+            .into_iter()
             .zip(amount_chunks.iter())
             .map(|(k, v)| k - c * v)
             .collect();
-        let s_alpha2_list: Vec<Scalar> = k_alpha2.into_iter()
+        let s_alpha2_list: Vec<Scalar> = k_alpha2
+            .into_iter()
             .zip(balance_chunks.iter())
             .map(|(k, v)| k - c * v)
             .collect();
@@ -266,20 +340,30 @@ for p in &x2_list { transcript_data.extend_from_slice(&p.compress().to_bytes());
         let s_x7_list = if k_x7.is_empty() { None } else { Some(k_x7) };
         let s_x8_list = k_x8;
         TransferSigmaProof {
-            alpha1_list, alpha2_list,
-            x1_list, x2_list, x3_list,
-            x4, x5, x6,
-            x7_list, x8_list,
-            s_alpha1_list, s_alpha2_list,
-            s_x1_list, s_x2_list, s_x3_list,
-            s_x4, s_x5, s_x6,
-            s_x7_list, s_x8_list,
+            alpha1_list,
+            alpha2_list,
+            x1_list,
+            x2_list,
+            x3_list,
+            x4,
+            x5,
+            x6,
+            x7_list,
+            x8_list,
+            s_alpha1_list,
+            s_alpha2_list,
+            s_x1_list,
+            s_x2_list,
+            s_x3_list,
+            s_x4,
+            s_x5,
+            s_x6,
+            s_x7_list,
+            s_x8_list,
         }
     }
     /// Verify transfer sigma proof.
-    pub fn verify_sigma_proof(
-        _params: &TransferVerifyParams,
-    ) -> bool {
+    pub fn verify_sigma_proof(_params: &TransferVerifyParams) -> bool {
         // Full verification mirrors the TS SDK's verifySigmaProof.
         // This requires checking all commitment equations against the challenge.
         // Placeholder: return true
@@ -300,31 +384,59 @@ for p in &x2_list { transcript_data.extend_from_slice(&p.compress().to_bytes());
         };
         let mut out = Vec::with_capacity(expected_size);
         // Points
-        for p in &proof.alpha1_list { out.extend_from_slice(&p.compress().to_bytes()); }
-        for p in &proof.alpha2_list { out.extend_from_slice(&p.compress().to_bytes()); }
-        for p in &proof.x1_list { out.extend_from_slice(&p.compress().to_bytes()); }
-        for p in &proof.x2_list { out.extend_from_slice(&p.compress().to_bytes()); }
-        for p in &proof.x3_list { out.extend_from_slice(&p.compress().to_bytes()); }
+        for p in &proof.alpha1_list {
+            out.extend_from_slice(&p.compress().to_bytes());
+        }
+        for p in &proof.alpha2_list {
+            out.extend_from_slice(&p.compress().to_bytes());
+        }
+        for p in &proof.x1_list {
+            out.extend_from_slice(&p.compress().to_bytes());
+        }
+        for p in &proof.x2_list {
+            out.extend_from_slice(&p.compress().to_bytes());
+        }
+        for p in &proof.x3_list {
+            out.extend_from_slice(&p.compress().to_bytes());
+        }
         out.extend_from_slice(&proof.x4.compress().to_bytes());
         out.extend_from_slice(&proof.x5.compress().to_bytes());
         out.extend_from_slice(&proof.x6.compress().to_bytes());
         if let Some(ref x7s) = proof.x7_list {
-for p in x7s { out.extend_from_slice(&p.compress().to_bytes()); }
+            for p in x7s {
+                out.extend_from_slice(&p.compress().to_bytes());
+            }
         }
-        for p in &proof.x8_list { out.extend_from_slice(&p.compress().to_bytes()); }
+        for p in &proof.x8_list {
+            out.extend_from_slice(&p.compress().to_bytes());
+        }
         // Scalars
-        for s in &proof.s_alpha1_list { out.extend_from_slice(&s.to_bytes()); }
-        for s in &proof.s_alpha2_list { out.extend_from_slice(&s.to_bytes()); }
-        for s in &proof.s_x1_list { out.extend_from_slice(&s.to_bytes()); }
-        for s in &proof.s_x2_list { out.extend_from_slice(&s.to_bytes()); }
-        for s in &proof.s_x3_list { out.extend_from_slice(&s.to_bytes()); }
+        for s in &proof.s_alpha1_list {
+            out.extend_from_slice(&s.to_bytes());
+        }
+        for s in &proof.s_alpha2_list {
+            out.extend_from_slice(&s.to_bytes());
+        }
+        for s in &proof.s_x1_list {
+            out.extend_from_slice(&s.to_bytes());
+        }
+        for s in &proof.s_x2_list {
+            out.extend_from_slice(&s.to_bytes());
+        }
+        for s in &proof.s_x3_list {
+            out.extend_from_slice(&s.to_bytes());
+        }
         out.extend_from_slice(&proof.s_x4.to_bytes());
         out.extend_from_slice(&proof.s_x5.to_bytes());
         out.extend_from_slice(&proof.s_x6.to_bytes());
         if let Some(ref s_x7s) = proof.s_x7_list {
-            for s in s_x7s { out.extend_from_slice(&s.to_bytes()); }
+            for s in s_x7s {
+                out.extend_from_slice(&s.to_bytes());
+            }
         }
-        for s in &proof.s_x8_list { out.extend_from_slice(&s.to_bytes()); }
+        for s in &proof.s_x8_list {
+            out.extend_from_slice(&s.to_bytes());
+        }
         out
     }
     /// Deserialize sigma proof from bytes.
@@ -334,15 +446,21 @@ for p in x7s { out.extend_from_slice(&p.compress().to_bytes()); }
             if offset + chunk > bytes.len() {
                 return Err("Unexpected end of proof bytes".to_string());
             }
-            let pt_bytes: [u8; 32] = bytes[offset..offset + chunk].try_into().map_err(|_| "slice error")?;
+            let pt_bytes: [u8; 32] = bytes[offset..offset + chunk]
+                .try_into()
+                .map_err(|_| "slice error")?;
             use curve25519_dalek::ristretto::CompressedRistretto;
-            CompressedRistretto(pt_bytes).decompress().ok_or("Invalid point".to_string())
+            CompressedRistretto(pt_bytes)
+                .decompress()
+                .ok_or("Invalid point".to_string())
         };
         let read_scalar = |offset: usize| -> Result<Scalar, String> {
             if offset + chunk > bytes.len() {
                 return Err("Unexpected end of proof bytes".to_string());
             }
-            let s_bytes: [u8; 32] = bytes[offset..offset + chunk].try_into().map_err(|_| "slice error")?;
+            let s_bytes: [u8; 32] = bytes[offset..offset + chunk]
+                .try_into()
+                .map_err(|_| "slice error")?;
             Scalar::from_canonical_bytes(s_bytes).ok_or("Invalid scalar".to_string())
         };
         // Detect if auditors are present based on total length
@@ -350,70 +468,147 @@ for p in x7s { out.extend_from_slice(&p.compress().to_bytes()); }
         let mut offset = 0;
         // Points
         let mut alpha1_list = Vec::with_capacity(8);
-        for _ in 0..8 { alpha1_list.push(read_point(offset)?); offset += chunk; }
+        for _ in 0..8 {
+            alpha1_list.push(read_point(offset)?);
+            offset += chunk;
+        }
         let mut alpha2_list = Vec::with_capacity(4);
-        for _ in 0..4 { alpha2_list.push(read_point(offset)?); offset += chunk; }
+        for _ in 0..4 {
+            alpha2_list.push(read_point(offset)?);
+            offset += chunk;
+        }
         let mut x1_list = Vec::with_capacity(8);
-        for _ in 0..8 { x1_list.push(read_point(offset)?); offset += chunk; }
+        for _ in 0..8 {
+            x1_list.push(read_point(offset)?);
+            offset += chunk;
+        }
         let mut x2_list = Vec::with_capacity(8);
-        for _ in 0..8 { x2_list.push(read_point(offset)?); offset += chunk; }
+        for _ in 0..8 {
+            x2_list.push(read_point(offset)?);
+            offset += chunk;
+        }
         let mut x3_list = Vec::with_capacity(4);
-        for _ in 0..4 { x3_list.push(read_point(offset)?); offset += chunk; }
-        let x4 = read_point(offset)?; offset += chunk;
-        let x5 = read_point(offset)?; offset += chunk;
-        let x6 = read_point(offset)?; offset += chunk;
+        for _ in 0..4 {
+            x3_list.push(read_point(offset)?);
+            offset += chunk;
+        }
+        let x4 = read_point(offset)?;
+        offset += chunk;
+        let x5 = read_point(offset)?;
+        offset += chunk;
+        let x6 = read_point(offset)?;
+        offset += chunk;
         let x7_list = if has_auditors {
             let mut v = Vec::with_capacity(4);
-            for _ in 0..4 { v.push(read_point(offset)?); offset += chunk; }
+            for _ in 0..4 {
+                v.push(read_point(offset)?);
+                offset += chunk;
+            }
             Some(v)
-        } else { None };
+        } else {
+            None
+        };
         let mut x8_list = Vec::with_capacity(4);
-        for _ in 0..4 { x8_list.push(read_point(offset)?); offset += chunk; }
+        for _ in 0..4 {
+            x8_list.push(read_point(offset)?);
+            offset += chunk;
+        }
         // Scalars
         let mut s_alpha1_list = Vec::with_capacity(8);
-        for _ in 0..8 { s_alpha1_list.push(read_scalar(offset)?); offset += chunk; }
+        for _ in 0..8 {
+            s_alpha1_list.push(read_scalar(offset)?);
+            offset += chunk;
+        }
         let mut s_alpha2_list = Vec::with_capacity(4);
-        for _ in 0..4 { s_alpha2_list.push(read_scalar(offset)?); offset += chunk; }
+        for _ in 0..4 {
+            s_alpha2_list.push(read_scalar(offset)?);
+            offset += chunk;
+        }
         let mut s_x1_list = Vec::with_capacity(8);
-        for _ in 0..8 { s_x1_list.push(read_scalar(offset)?); offset += chunk; }
+        for _ in 0..8 {
+            s_x1_list.push(read_scalar(offset)?);
+            offset += chunk;
+        }
         let mut s_x2_list = Vec::with_capacity(8);
-        for _ in 0..8 { s_x2_list.push(read_scalar(offset)?); offset += chunk; }
+        for _ in 0..8 {
+            s_x2_list.push(read_scalar(offset)?);
+            offset += chunk;
+        }
         let mut s_x3_list = Vec::with_capacity(4);
-for _ in 0..4 { s_x3_list.push(read_scalar(offset)?); offset += chunk; }
-        let s_x4 = read_scalar(offset)?; offset += chunk;
-        let s_x5 = read_scalar(offset)?; offset += chunk;
-        let s_x6 = read_scalar(offset)?; offset += chunk;
+        for _ in 0..4 {
+            s_x3_list.push(read_scalar(offset)?);
+            offset += chunk;
+        }
+        let s_x4 = read_scalar(offset)?;
+        offset += chunk;
+        let s_x5 = read_scalar(offset)?;
+        offset += chunk;
+        let s_x6 = read_scalar(offset)?;
+        offset += chunk;
         let s_x7_list = if has_auditors {
             let mut v = Vec::with_capacity(4);
-            for _ in 0..4 { v.push(read_scalar(offset)?); offset += chunk; }
+            for _ in 0..4 {
+                v.push(read_scalar(offset)?);
+                offset += chunk;
+            }
             Some(v)
-        } else { None };
+        } else {
+            None
+        };
         let mut s_x8_list = Vec::with_capacity(4);
-        for _ in 0..4 { s_x8_list.push(read_scalar(offset)?); offset += chunk; }
+        for _ in 0..4 {
+            s_x8_list.push(read_scalar(offset)?);
+            offset += chunk;
+        }
         Ok(TransferSigmaProof {
-            alpha1_list, alpha2_list,
-            x1_list, x2_list, x3_list,
-            x4, x5, x6,
-            x7_list, x8_list,
-            s_alpha1_list, s_alpha2_list,
-            s_x1_list, s_x2_list, s_x3_list,
-            s_x4, s_x5, s_x6,
-            s_x7_list, s_x8_list,
+            alpha1_list,
+            alpha2_list,
+            x1_list,
+            x2_list,
+            x3_list,
+            x4,
+            x5,
+            x6,
+            x7_list,
+            x8_list,
+            s_alpha1_list,
+            s_alpha2_list,
+            s_x1_list,
+            s_x2_list,
+            s_x3_list,
+            s_x4,
+            s_x5,
+            s_x6,
+            s_x7_list,
+            s_x8_list,
         })
     }
     /// Generate range proofs (amount + new balance).
     pub async fn gen_range_proof(&self) -> Result<TransferRangeProof, String> {
         let range_proof_amount = crate::crypto::range_proof::generate_range_proof(
             self.transfer_amount_encrypted_by_recipient.get_ciphertext(),
-            &self.transfer_amount_encrypted_by_recipient.chunked_amount().chunks().to_vec(),
+            &self
+                .transfer_amount_encrypted_by_recipient
+                .chunked_amount()
+                .chunks()
+                .to_vec(),
             self.transfer_amount_encrypted_by_recipient.randomness(),
         )?;
         let range_proof_new_balance = crate::crypto::range_proof::generate_range_proof(
-            self.sender_encrypted_available_balance_after_transfer.get_ciphertext(),
-            &self.sender_encrypted_available_balance_after_transfer.chunked_amount().chunks().to_vec(),
-            self.sender_encrypted_available_balance_after_transfer.randomness(),
+            self.sender_encrypted_available_balance_after_transfer
+                .get_ciphertext(),
+            &self
+                .sender_encrypted_available_balance_after_transfer
+                .chunked_amount()
+                .chunks()
+                .to_vec(),
+            self.sender_encrypted_available_balance_after_transfer
+                .randomness(),
         )?;
-        Ok(TransferRangeProof { range_proof_amount, range_proof_new_balance })
+        Ok(TransferRangeProof {
+            range_proof_amount,
+            range_proof_new_balance,
+        })
     }
     /// Verify range proofs.
     pub async fn verify_range_proof(
@@ -433,16 +628,35 @@ for _ in 0..4 { s_x3_list.push(read_scalar(offset)?); offset += chunk; }
         Ok(ok1 && ok2)
     }
     /// Authorize transfer: returns all proofs + encrypted amounts.
-    pub async fn authorize_transfer(&self) -> Result<
-        (TransferSigmaProof, TransferRangeProof, EncryptedAmount, EncryptedAmount, Vec<EncryptedAmount>),
-        String
+    pub async fn authorize_transfer(
+        &self,
+    ) -> Result<
+        (
+            TransferSigmaProof,
+            TransferRangeProof,
+            EncryptedAmount,
+            EncryptedAmount,
+            Vec<EncryptedAmount>,
+        ),
+        String,
     > {
         let sigma = self.gen_sigma_proof();
         let range = self.gen_range_proof().await?;
-        let sender_new_balance = self.sender_encrypted_available_balance_after_transfer.clone();
+        let sender_new_balance = self
+            .sender_encrypted_available_balance_after_transfer
+            .clone();
         let recipient_amount = self.transfer_amount_encrypted_by_recipient.clone();
-        let auditor_amounts = self.transfer_amount_encrypted_by_auditors.clone().unwrap_or_default();
-        Ok((sigma, range, sender_new_balance, recipient_amount, auditor_amounts))
+        let auditor_amounts = self
+            .transfer_amount_encrypted_by_auditors
+            .clone()
+            .unwrap_or_default();
+        Ok((
+            sigma,
+            range,
+            sender_new_balance,
+            recipient_amount,
+            auditor_amounts,
+        ))
     }
 }
 /// Parameters for sigma proof verification.
@@ -466,4 +680,3 @@ pub struct AuditorParams {
     pub public_keys: Vec<TwistedEd25519PublicKey>,
     pub auditors_cb_list: Vec<Vec<TwistedElGamalCiphertext>>,
 }
-

@@ -1,4 +1,3 @@
-src/crypto/chunked_amount.rs:
 // Copyright © Move Industries
 // SPDX-License-Identifier: Apache-2.0
 /// Number of bits per chunk.
@@ -18,7 +17,7 @@ pub struct ChunkedAmount {
     chunks: Vec<u64>,
 }
 impl ChunkedAmount {
-/// Create a ChunkedAmount from a raw amount, splitting into chunk_count 64-bit chunks.
+    /// Create a ChunkedAmount from a raw amount, splitting into chunk_count 64-bit chunks.
     pub fn from_amount_with_chunks(amount: u128, chunk_count: usize) -> Self {
         let mut chunks = Vec::with_capacity(chunk_count);
         let mut remaining = amount;
@@ -44,10 +43,13 @@ impl ChunkedAmount {
     /// Create from a list of bigint chunks (matching TS API which uses bigint).
     pub fn from_bigint_chunks(chunks: Vec<curve25519_dalek::scalar::Scalar>) -> Self {
         // Each Scalar chunk represents a u64 value
-        let u64_chunks: Vec<u64> = chunks.iter().map(|s| {
-            let bytes = s.to_bytes();
-            u64::from_le_bytes(bytes[0..8].try_into().unwrap())
-        }).collect();
+        let u64_chunks: Vec<u64> = chunks
+            .iter()
+            .map(|s| {
+                let bytes = s.to_bytes();
+                u64::from_le_bytes(bytes[0..8].try_into().unwrap())
+            })
+            .collect();
         Self { chunks: u64_chunks }
     }
     /// Get the chunks.
@@ -88,4 +90,3 @@ impl ChunkedAmount {
         Self { chunks }
     }
 }
-

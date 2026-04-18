@@ -1,9 +1,9 @@
 // Copyright © Move Industries
 // SPDX-License-Identifier: Apache-2.0
+use crate::utils::ed25519_gen_random;
 use curve25519_dalek::ristretto::RistrettoPoint;
 use curve25519_dalek::scalar::Scalar;
 use curve25519_dalek::traits::Identity;
-use crate::utils::ed25519_gen_random;
 /// Twisted Ed25519 private key (a Ristretto scalar).
 #[derive(Clone, Debug)]
 pub struct TwistedEd25519PrivateKey {
@@ -15,15 +15,20 @@ pub struct TwistedEd25519PublicKey {
     point: RistrettoPoint,
 }
 /// Derivation message used to derive a confidential decryption key from an account signature.
-pub const DECRYPTION_KEY_DERIVATION_MESSAGE: &[u8] = b"MovementConfidentialAsset::DecryptionKeyDerivation";
+pub const DECRYPTION_KEY_DERIVATION_MESSAGE: &[u8] =
+    b"MovementConfidentialAsset::DecryptionKeyDerivation";
 impl TwistedEd25519PrivateKey {
     /// Generate a new random private key.
     pub fn generate() -> Self {
-        Self { scalar: ed25519_gen_random() }
+        Self {
+            scalar: ed25519_gen_random(),
+        }
     }
     /// Create from raw 32-byte LE scalar bytes.
     pub fn from_bytes(bytes: &[u8; 32]) -> Self {
-        Self { scalar: Scalar::from_bytes_mod_order(*bytes) }
+        Self {
+            scalar: Scalar::from_bytes_mod_order(*bytes),
+        }
     }
     /// Create from a Scalar directly.
     pub fn from_scalar(scalar: Scalar) -> Self {
@@ -48,8 +53,10 @@ impl TwistedEd25519PublicKey {
     /// Create from raw 32-byte compressed Ristretto point bytes.
     pub fn from_bytes(bytes: &[u8; 32]) -> Result<Self, String> {
         use curve25519_dalek::ristretto::CompressedRistretto;
-let compressed = CompressedRistretto(*bytes);
-        let point = compressed.decompress().ok_or("Invalid Ristretto point bytes")?;
+        let compressed = CompressedRistretto(*bytes);
+        let point = compressed
+            .decompress()
+            .ok_or("Invalid Ristretto point bytes")?;
         Ok(Self { point })
     }
     /// Create from a RistrettoPoint directly.
@@ -69,4 +76,3 @@ let compressed = CompressedRistretto(*bytes);
         self.to_bytes().to_vec()
     }
 }
-

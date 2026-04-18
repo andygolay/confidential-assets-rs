@@ -1,17 +1,16 @@
-src/crypto/confidential_normalization.rs:
 // Copyright © Move Industries
 // SPDX-License-Identifier: Apache-2.0
-use curve25519_dalek::ristretto::RistrettoPoint;
-use curve25519_dalek::scalar::Scalar;
-use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
-use crate::crypto::twisted_ed25519::{TwistedEd25519PrivateKey, TwistedEd25519PublicKey};
-use crate::crypto::twisted_el_gamal::TwistedElGamalCiphertext;
-use crate::crypto::encrypted_amount::EncryptedAmount;
+use crate::consts::PROTOCOL_ID_NORMALIZATION;
 use crate::crypto::chunked_amount::{ChunkedAmount, AVAILABLE_BALANCE_CHUNK_COUNT, CHUNK_BITS};
+use crate::crypto::encrypted_amount::EncryptedAmount;
 use crate::crypto::fiat_shamir::fiat_shamir_challenge_full;
 use crate::crypto::h_ristretto;
-use crate::consts::PROTOCOL_ID_NORMALIZATION;
+use crate::crypto::twisted_ed25519::{TwistedEd25519PrivateKey, TwistedEd25519PublicKey};
+use crate::crypto::twisted_el_gamal::TwistedElGamalCiphertext;
 use crate::utils::ed25519_gen_random;
+use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
+use curve25519_dalek::ristretto::RistrettoPoint;
+use curve25519_dalek::scalar::Scalar;
 /// Normalization sigma proof.
 #[derive(Clone, Debug)]
 pub struct NormalizationSigmaProof {
@@ -81,20 +80,34 @@ impl ConfidentialNormalization {
         let k_x: Vec<Scalar> = (0..n).map(|_| ed25519_gen_random()).collect();
         let k_a = ed25519_gen_random();
         let k_t = ed25519_gen_random();
-        let alpha_list: Vec<RistrettoPoint> = k_alpha.iter()
-            .zip(self.unnormalized_encrypted_available_balance.randomness().iter())
+        let alpha_list: Vec<RistrettoPoint> = k_alpha
+            .iter()
+            .zip(
+                self.unnormalized_encrypted_available_balance
+                    .randomness()
+                    .iter(),
+            )
             .map(|(k, r)| k * g + r * pk.as_point())
             .collect();
-        let x_list: Vec<RistrettoPoint> = k_x.iter()
-            .zip(self.normalized_encrypted_available_balance.randomness().iter())
+        let x_list: Vec<RistrettoPoint> = k_x
+            .iter()
+            .zip(
+                self.normalized_encrypted_available_balance
+                    .randomness()
+                    .iter(),
+            )
             .map(|(k, r)| k * g + r * pk.as_point())
             .collect();
         let a = k_a * g;
         let sum_k_x: Scalar = k_x.iter().fold(Scalar::ZERO, |acc, k| acc + k);
-let t = k_t * g + sum_k_x * h;
+        let t = k_t * g + sum_k_x * h;
         let mut transcript: Vec<u8> = Vec::new();
-        for p in &alpha_list { transcript.extend_from_slice(&p.compress().to_bytes()); }
-        for p in &x_list { transcript.extend_from_slice(&p.compress().to_bytes()); }
+        for p in &alpha_list {
+            transcript.extend_from_slice(&p.compress().to_bytes());
+        }
+        for p in &x_list {
+            transcript.extend_from_slice(&p.compress().to_bytes());
+        }
         transcript.extend_from_slice(&a.compress().to_bytes());
         transcript.extend_from_slice(&t.compress().to_bytes());
         let c = fiat_shamir_challenge_full(
@@ -105,13 +118,21 @@ let t = k_t * g + sum_k_x * h;
             &self.token_address,
             &[&transcript],
         );
-        let unnorm_chunks = self.unnormalized_encrypted_available_balance.chunked_amount().to_scalars();
-        let norm_chunks = self.normalized_encrypted_available_balance.chunked_amount().to_scalars();
-        let s_alpha_list: Vec<Scalar> = k_alpha.into_iter()
+        let unnorm_chunks = self
+            .unnormalized_encrypted_available_balance
+            .chunked_amount()
+            .to_scalars();
+        let norm_chunks = self
+            .normalized_encrypted_available_balance
+            .chunked_amount()
+            .to_scalars();
+        let s_alpha_list: Vec<Scalar> = k_alpha
+            .into_iter()
             .zip(unnorm_chunks.iter())
             .map(|(k, v)| k - c * v)
             .collect();
-        let s_x_list: Vec<Scalar> = k_x.into_iter()
+        let s_x_list: Vec<Scalar> = k_x
+            .into_iter()
             .zip(norm_chunks.iter())
             .map(|(k, v)| k - c * v)
             .collect();
@@ -120,8 +141,14 @@ let t = k_t * g + sum_k_x * h;
         let total_norm: Scalar = norm_chunks.iter().fold(Scalar::ZERO, |acc, v| acc + v);
         let s_t = k_t - c * total_norm;
         NormalizationSigmaProof {
-            alpha_list, x_list, a, t,
-            s_alpha_list, s_x_list, s_a, s_t,
+            alpha_list,
+            x_list,
+            a,
+            t,
+            s_alpha_list,
+            s_x_list,
+            s_a,
+            s_t,
         }
     }
     /// Verify normalization sigma proof.
@@ -137,8 +164,12 @@ let t = k_t * g + sum_k_x * h;
     ) -> bool {
         // Recompute challenge
         let mut transcript: Vec<u8> = Vec::new();
-        for p in &sigma_proof.alpha_list { transcript.extend_from_slice(&p.compress().to_bytes()); }
-        for p in &sigma_proof.x_list { transcript.extend_from_slice(&p.compress().to_bytes()); }
+        for p in &sigma_proof.alpha_list {
+            transcript.extend_from_slice(&p.compress().to_bytes());
+        }
+        for p in &sigma_proof.x_list {
+            transcript.extend_from_slice(&p.compress().to_bytes());
+        }
         transcript.extend_from_slice(&sigma_proof.a.compress().to_bytes());
         transcript.extend_from_slice(&sigma_proof.t.compress().to_bytes());
         let c = fiat_shamir_challenge_full(
@@ -162,7 +193,11 @@ let t = k_t * g + sum_k_x * h;
     pub async fn gen_range_proof(&self) -> Result<Vec<u8>, String> {
         crate::crypto::range_proof::generate_range_proof(
             self.normalized_encrypted_available_balance.get_ciphertext(),
-            &self.normalized_encrypted_available_balance.chunked_amount().chunks().to_vec(),
+            &self
+                .normalized_encrypted_available_balance
+                .chunked_amount()
+                .chunks()
+                .to_vec(),
             self.normalized_encrypted_available_balance.randomness(),
         )
     }
@@ -178,16 +213,23 @@ let t = k_t * g + sum_k_x * h;
     }
     /// Serialize sigma proof to bytes.
     pub fn serialize_sigma_proof(proof: &NormalizationSigmaProof) -> Vec<u8> {
-let mut out = Vec::with_capacity(crate::consts::SIGMA_PROOF_NORMALIZATION_SIZE);
-        for p in &proof.alpha_list { out.extend_from_slice(&p.compress().to_bytes()); }
-        for p in &proof.x_list { out.extend_from_slice(&p.compress().to_bytes()); }
+        let mut out = Vec::with_capacity(crate::consts::SIGMA_PROOF_NORMALIZATION_SIZE);
+        for p in &proof.alpha_list {
+            out.extend_from_slice(&p.compress().to_bytes());
+        }
+        for p in &proof.x_list {
+            out.extend_from_slice(&p.compress().to_bytes());
+        }
         out.extend_from_slice(&proof.a.compress().to_bytes());
         out.extend_from_slice(&proof.t.compress().to_bytes());
-        for s in &proof.s_alpha_list { out.extend_from_slice(&s.to_bytes()); }
-        for s in &proof.s_x_list { out.extend_from_slice(&s.to_bytes()); }
+        for s in &proof.s_alpha_list {
+            out.extend_from_slice(&s.to_bytes());
+        }
+        for s in &proof.s_x_list {
+            out.extend_from_slice(&s.to_bytes());
+        }
         out.extend_from_slice(&proof.s_a.to_bytes());
         out.extend_from_slice(&proof.s_t.to_bytes());
         out
     }
 }
-
