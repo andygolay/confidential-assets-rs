@@ -4,33 +4,39 @@
 //! High-level confidential asset API.
 //!
 //! Mirrors the TS SDK's `confidentialAsset.ts`. Wraps the transaction builder
-//! and view functions into a convenient interface.
+//! and view functions into a convenient interface that returns `TransactionPayload`
+//! ready for `aptos.sign_and_submit()`.
+//!
+//! TODO: Switch `aptos_sdk` types → `movement_sdk` types once the fork is ready.
 
-use crate::crypto::{
-    TwistedEd25519PrivateKey, TwistedEd25519PublicKey, ConfidentialNormalization,
+use aptos_sdk::{
+    Aptos, AptosError,
+    transaction::payload::TransactionPayload,
+    types::AccountAddress,
 };
+use crate::crypto::{TwistedEd25519PrivateKey, TwistedEd25519PublicKey};
 use crate::consts::DEFAULT_CONFIDENTIAL_COIN_MODULE_ADDRESS;
-use crate::internal::transaction_builder::{ConfidentialAssetTransactionBuilder, TransactionPayload};
+use crate::internal::transaction_builder::ConfidentialAssetTransactionBuilder;
 use crate::internal::view_functions::{
-    MovementClient, ViewFunctionError, ConfidentialBalance,
+    ConfidentialBalance,
     get_balance, get_encryption_key, get_global_auditor_encryption_key,
-    is_balance_normalized, is_pending_balance_frozen, get_chain_id_byte_for_proofs,
+    is_balance_normalized, is_pending_balance_frozen,
 };
 
+// TODO: Switch `Aptos` → `Movement`
 /// High-level API for confidential asset operations.
 ///
 /// This struct wraps the transaction builder and provides methods corresponding
 /// to each confidential asset operation (register, deposit, withdraw, transfer, etc.).
 ///
-/// Transaction submission is left to the caller — this API only builds the payloads.
-/// Sign and submit using your preferred Movement client.
-pub struct ConfidentialAsset<C: MovementClient> {
-    pub transaction: ConfidentialAssetTransactionBuilder<C>,
+/// Transaction submission is done via `aptos.sign_and_submit()` using the returned payloads.
+pub struct ConfidentialAsset<'a> {
+    pub transaction: ConfidentialAssetTransactionBuilder<'a>,
     pub with_fee_payer: bool,
 }
 
-impl<C: MovementClient + Sync> ConfidentialAsset<C> {
-    pub fn new(client: C, confidential_asset_module_address: Option<&str>, with_fee_payer: bool) -> Self {
+impl<'a> ConfidentialAsset<'a> {
+    pub fn new(client: &'a Aptos, confidential_asset_module_address: Option<&str>, with_fee_payer: bool) -> Self {
         Self {
             transaction: ConfidentialAssetTransactionBuilder::new(client, confidential_asset_module_address),
             with_fee_payer,
@@ -40,12 +46,12 @@ impl<C: MovementClient + Sync> ConfidentialAsset<C> {
     /// Get the confidential balance for an account.
     pub async fn get_balance(
         &self,
-        account_address: &[u8; 32],
-        token_address: &[u8; 32],
+        account_address: &AccountAddress,
+        token_address: &AccountAddress,
         decryption_key: &TwistedEd25519PrivateKey,
-    ) -> Result<ConfidentialBalance, ViewFunctionError> {
+    ) -> Result<ConfidentialBalance, AptosError> {
         get_balance(
-            &self.transaction.client,
+            self.transaction.client,
             account_address,
             token_address,
             decryption_key,
@@ -56,47 +62,46 @@ impl<C: MovementClient + Sync> ConfidentialAsset<C> {
     /// Build a register balance transaction.
     pub async fn register_balance(
         &self,
-        sender: &[u8; 32],
-        token_address: &[u8; 32],
+        sender: &AccountAddress,
+        token_address: &AccountAddress,
         decryption_key: &TwistedEd25519PrivateKey,
-    ) -> Result<TransactionPayload, ViewFunctionError> {
+    ) -> Result<TransactionPayload, AptosError> {
         self.transaction.register_balance(sender, token_address, decryption_key).await
     }
 
     /// Build a deposit transaction.
     pub fn deposit(
         &self,
-        sender: &[u8; 32],
-        token_address: &[u8; 32],
+        token_address: &AccountAddress,
         amount: u64,
-        recipient: Option<&[u8; 32]>,
-    ) -> Result<TransactionPayload, ViewFunctionError> {
-        self.transaction.deposit(sender, token_address, amount, recipient)
+        recipient: Option<&AccountAddress>,
+    ) -> Result<TransactionPayload, AptosError> {
+        self.transaction.deposit(token_address, amount, recipient)
     }
 
     /// Build a withdraw transaction.
     pub async fn withdraw(
         &self,
-        sender: &[u8; 32],
-        token_address: &[u8; 32],
+        sender: &AccountAddress,
+        token_address: &AccountAddress,
         amount: u64,
         sender_decryption_key: &TwistedEd25519PrivateKey,
-        recipient: Option<&[u8; 32]>,
-    ) -> Result<TransactionPayload, ViewFunctionError> {
+        recipient: Option<&AccountAddress>,
+    ) -> Result<TransactionPayload, AptosError> {
         self.transaction.withdraw(sender, token_address, amount, sender_decryption_key, recipient).await
     }
 
     /// Build a transfer transaction.
     pub async fn transfer(
         &self,
-        sender: &[u8; 32],
-        recipient: &[u8; 32],
-        token_address: &[u8; 32],
+        sender: &AccountAddress,
+        recipient: &AccountAddress,
+        token_address: &AccountAddress,
         amount: u64,
         sender_decryption_key: &TwistedEd25519PrivateKey,
         additional_auditor_encryption_keys: &[TwistedEd25519PublicKey],
         sender_auditor_hint: &[u8],
-    ) -> Result<TransactionPayload, ViewFunctionError> {
+    ) -> Result<TransactionPayload, AptosError> {
         self.transaction.transfer(
             sender,
             recipient,
@@ -108,19 +113,19 @@ impl<C: MovementClient + Sync> ConfidentialAsset<C> {
         ).await
     }
 
-    /// Build a rollover pending balance transaction.
+    /// Build a rollover pending balance transaction (may also normalize first).
     pub async fn rollover_pending_balance(
         &self,
-        sender: &[u8; 32],
-        token_address: &[u8; 32],
+        sender: &AccountAddress,
+        token_address: &AccountAddress,
         sender_decryption_key: Option<&TwistedEd25519PrivateKey>,
         with_freeze_balance: bool,
-    ) -> Result<Vec<TransactionPayload>, ViewFunctionError> {
+    ) -> Result<Vec<TransactionPayload>, AptosError> {
         let mut payloads = Vec::new();
 
         // Check if normalization is needed
         let is_norm = is_balance_normalized(
-            &self.transaction.client,
+            self.transaction.client,
             sender,
             token_address,
             Some(&self.transaction.confidential_asset_module_address),
@@ -128,8 +133,8 @@ impl<C: MovementClient + Sync> ConfidentialAsset<C> {
 
         if !is_norm {
             let dk = sender_decryption_key.ok_or_else(|| {
-                ViewFunctionError::RpcError(
-                    "Rollover failed. Balance is not normalized and no sender decryption key was provided.".into(),
+                AptosError::unexpected_response(
+                    "Rollover failed. Balance is not normalized and no sender decryption key was provided.",
                 )
             })?;
 
@@ -151,11 +156,11 @@ impl<C: MovementClient + Sync> ConfidentialAsset<C> {
     /// Build a rotate encryption key transaction (with optional rollover first).
     pub async fn rotate_encryption_key(
         &self,
-        sender: &[u8; 32],
+        sender: &AccountAddress,
         sender_decryption_key: &TwistedEd25519PrivateKey,
         new_sender_decryption_key: &TwistedEd25519PrivateKey,
-        token_address: &[u8; 32],
-    ) -> Result<Vec<TransactionPayload>, ViewFunctionError> {
+        token_address: &AccountAddress,
+    ) -> Result<Vec<TransactionPayload>, AptosError> {
         let mut payloads = Vec::new();
 
         // Check if pending balance needs rollover
@@ -185,21 +190,21 @@ impl<C: MovementClient + Sync> ConfidentialAsset<C> {
     /// Build a normalize balance transaction.
     pub async fn normalize_balance(
         &self,
-        sender: &[u8; 32],
+        sender: &AccountAddress,
         sender_decryption_key: &TwistedEd25519PrivateKey,
-        token_address: &[u8; 32],
-    ) -> Result<TransactionPayload, ViewFunctionError> {
+        token_address: &AccountAddress,
+    ) -> Result<TransactionPayload, AptosError> {
         self.transaction.normalize_balance(sender, sender_decryption_key, token_address).await
     }
 
     /// Check if a user has registered a confidential balance.
     pub async fn has_user_registered(
         &self,
-        account_address: &[u8; 32],
-        token_address: &[u8; 32],
-    ) -> Result<bool, ViewFunctionError> {
+        account_address: &AccountAddress,
+        token_address: &AccountAddress,
+    ) -> Result<bool, AptosError> {
         crate::internal::view_functions::has_user_registered(
-            &self.transaction.client,
+            self.transaction.client,
             account_address,
             token_address,
             Some(&self.transaction.confidential_asset_module_address),
@@ -209,11 +214,11 @@ impl<C: MovementClient + Sync> ConfidentialAsset<C> {
     /// Check if a user's balance is normalized.
     pub async fn is_balance_normalized(
         &self,
-        account_address: &[u8; 32],
-        token_address: &[u8; 32],
-    ) -> Result<bool, ViewFunctionError> {
+        account_address: &AccountAddress,
+        token_address: &AccountAddress,
+    ) -> Result<bool, AptosError> {
         is_balance_normalized(
-            &self.transaction.client,
+            self.transaction.client,
             account_address,
             token_address,
             Some(&self.transaction.confidential_asset_module_address),
@@ -223,11 +228,11 @@ impl<C: MovementClient + Sync> ConfidentialAsset<C> {
     /// Check if a user's pending balance is frozen.
     pub async fn is_pending_balance_frozen(
         &self,
-        account_address: &[u8; 32],
-        token_address: &[u8; 32],
-    ) -> Result<bool, ViewFunctionError> {
+        account_address: &AccountAddress,
+        token_address: &AccountAddress,
+    ) -> Result<bool, AptosError> {
         is_pending_balance_frozen(
-            &self.transaction.client,
+            self.transaction.client,
             account_address,
             token_address,
             Some(&self.transaction.confidential_asset_module_address),
@@ -237,11 +242,11 @@ impl<C: MovementClient + Sync> ConfidentialAsset<C> {
     /// Get the encryption key for an account.
     pub async fn get_encryption_key(
         &self,
-        account_address: &[u8; 32],
-        token_address: &[u8; 32],
-    ) -> Result<TwistedEd25519PublicKey, ViewFunctionError> {
+        account_address: &AccountAddress,
+        token_address: &AccountAddress,
+    ) -> Result<TwistedEd25519PublicKey, AptosError> {
         get_encryption_key(
-            &self.transaction.client,
+            self.transaction.client,
             account_address,
             token_address,
             Some(&self.transaction.confidential_asset_module_address),
@@ -251,10 +256,10 @@ impl<C: MovementClient + Sync> ConfidentialAsset<C> {
     /// Get the asset auditor encryption key for a token.
     pub async fn get_asset_auditor_encryption_key(
         &self,
-        token_address: &[u8; 32],
-    ) -> Result<Option<TwistedEd25519PublicKey>, ViewFunctionError> {
+        token_address: &AccountAddress,
+    ) -> Result<Option<TwistedEd25519PublicKey>, AptosError> {
         get_global_auditor_encryption_key(
-            &self.transaction.client,
+            self.transaction.client,
             token_address,
             Some(&self.transaction.confidential_asset_module_address),
         ).await
