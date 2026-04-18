@@ -6,7 +6,8 @@ pub const PROOF_CHUNK_SIZE: usize = 32;
 /// Maximum `sender_auditor_hint` length (bytes) accepted by `confidential_transfer` on-chain.
 pub const MAX_SENDER_AUDITOR_HINT_BYTES: usize = 256;
 
-pub const SIGMA_PROOF_WITHDRAW_SIZE: usize = PROOF_CHUNK_SIZE * 21;
+/// Matches current Movement TS `serializeSigmaProof` (36 limbs × 32 bytes). Older `21 × 32` constants are obsolete.
+pub const SIGMA_PROOF_WITHDRAW_SIZE: usize = PROOF_CHUNK_SIZE * 36;
 /// Base transfer sigma proof (no auditors): 56 × 32-byte chunks (TS / Move layout).
 pub const SIGMA_PROOF_TRANSFER_SIZE: usize = PROOF_CHUNK_SIZE * 56;
 pub const SIGMA_PROOF_KEY_ROTATION_SIZE: usize = PROOF_CHUNK_SIZE * 23;

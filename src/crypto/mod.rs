@@ -13,6 +13,7 @@ pub mod range_proof;
 pub mod scalar_ts;
 pub mod twisted_ed25519;
 pub mod twisted_el_gamal;
+pub mod withdraw_protocol;
 
 pub use chunked_amount::*;
 pub use confidential_key_rotation::*;
@@ -28,6 +29,7 @@ pub use scalar_ts::{
 };
 pub use twisted_ed25519::*;
 pub use twisted_el_gamal::*;
+pub use withdraw_protocol::*;
 
 use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
 

@@ -45,9 +45,10 @@ assert_eq!(ea.get_amount(), 1000);
 | `bcsSerializeMoveVectorU8` | `utils/moveBcs` | `bcs_serialize_move_vector_u8` |
 | Balance view cache keys + memoization | `utils/memoize` | `memoize` module |
 | Variadic Fiat–Shamir | `fiatShamirChallenge` | `fiat_shamir_challenge_ts`, `dst_hash_ts` |
-| Transfer sigma (56×32-byte base + auditors) | Full gen + `verifySigmaProof` | **Gen** + `verify_sigma_proof`; **TS fixture** — `fixtures/ts/generate.ts` → `tests/fixtures/transfer_sigma.fixture.json` (see `fixtures/ts/README.md`) |
+| Transfer sigma (56×32-byte base + auditors) | Full gen + `verifySigmaProof` | **Verifier** matches TS fixture (`transfer_sigma_fixture`). **Rust `gen_sigma_proof` ↔ `verify_sigma_proof`** self-roundtrip is still **WIP** (σ response / commitment alignment with the exact TS `Z()` transcript and limb `h(·)` steps). |
 | Range proofs | WASM batch executor | Empty placeholder bytes in `authorize_transfer` until native/WASM integration |
-| Withdraw / rotation / normalization verification | Implemented in TS | **Stubs** or simplified checks — align with TS before relying on-chain |
+| Withdraw σ (36×32) | Full gen + verify in TS | **Wire + verifier** in `withdraw_protocol`; **Rust gen↔verify** roundtrip ignored until prover matches TS (same class of issue as transfer) |
+| Key rotation / normalization verification | Implemented in TS | **Stubs** — align with TS before relying on-chain |
 
 ## Status
 
@@ -57,7 +58,8 @@ assert_eq!(ea.get_amount(), 1000);
 - ✅ Weighted limb responses for transfer σ (α₁, α₃, α₄, α₆) consistent with verifier `lin_comb_pow2`
 - 🔲 Range proof bytes (needs TS-compatible batch ZKP)
 - ✅ End-to-end **transfer σ verify** vs Movement TS fixture (`transfer_sigma_fixture` + `fixtures/ts/generate.ts`)
-- 🔲 Withdraw / rotation / normalization verifiers vs TS
+- 🔲 **Rust-native** transfer / withdraw σ **gen↔verify** (needs TS `Z()` + limb `h(·)` parity work)
+- 🔲 Withdraw / rotation / normalization full parity vs TS
 
 ## License
 

@@ -49,9 +49,10 @@ fn generate_withdraw_sigma_proof() {
     .expect("create_with_balance should succeed");
 
     let sigma = cw.gen_sigma_proof();
-    // Verify sigma proof was generated (all fields non-empty)
-    assert!(!sigma.alpha_list.is_empty());
-    assert!(!sigma.x_list.is_empty());
+    assert_eq!(
+        sigma.serialize().len(),
+        confidential_assets::SIGMA_PROOF_WITHDRAW_SIZE
+    );
 }
 
 #[test]
