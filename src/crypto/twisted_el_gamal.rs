@@ -1,11 +1,11 @@
 // Copyright © Move Industries
 // SPDX-License-Identifier: Apache-2.0
-use curve25519_dalek::ristretto::RistrettoPoint;
-use curve25519_dalek::scalar::Scalar;
-use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
 use crate::crypto::h_ristretto;
 use crate::crypto::twisted_ed25519::{TwistedEd25519PrivateKey, TwistedEd25519PublicKey};
 use crate::utils::ed25519_gen_random;
+use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
+use curve25519_dalek::ristretto::RistrettoPoint;
+use curve25519_dalek::scalar::Scalar;
 /// Twisted ElGamal ciphertext: C = r*G + v*H, D = r*PK
 #[derive(Clone, Debug)]
 pub struct TwistedElGamalCiphertext {
@@ -41,8 +41,12 @@ impl TwistedElGamalCiphertext {
         let c_bytes: [u8; 32] = bytes[0..32].try_into().map_err(|_| "slice error")?;
         let d_bytes: [u8; 32] = bytes[32..64].try_into().map_err(|_| "slice error")?;
         use curve25519_dalek::ristretto::CompressedRistretto;
-        let c = CompressedRistretto(c_bytes).decompress().ok_or("Invalid C point")?;
-        let d = CompressedRistretto(d_bytes).decompress().ok_or("Invalid D point")?;
+        let c = CompressedRistretto(c_bytes)
+            .decompress()
+            .ok_or("Invalid C point")?;
+        let d = CompressedRistretto(d_bytes)
+            .decompress()
+            .ok_or("Invalid D point")?;
         Ok(Self { c, d })
     }
 }
@@ -51,7 +55,10 @@ pub struct TwistedElGamal;
 impl TwistedElGamal {
     /// Encrypt a scalar value v under a public key.
     /// Returns ciphertext (C, D) where C = r*G + v*H, D = r*PK.
-    pub fn encrypt_with_pk(value: Scalar, public_key: &TwistedEd25519PublicKey) -> TwistedElGamalCiphertext {
+    pub fn encrypt_with_pk(
+        value: Scalar,
+        public_key: &TwistedEd25519PublicKey,
+    ) -> TwistedElGamalCiphertext {
         let r = ed25519_gen_random();
         let g = RISTRETTO_BASEPOINT_POINT;
         let h = h_ristretto();
@@ -60,7 +67,11 @@ impl TwistedElGamal {
         TwistedElGamalCiphertext::new(c, d)
     }
     /// Encrypt a single ciphertext for one chunk.
-    pub fn encrypt_chunk(value: Scalar, public_key: &TwistedEd25519PublicKey, r: Scalar) -> TwistedElGamalCiphertext {
+    pub fn encrypt_chunk(
+        value: Scalar,
+        public_key: &TwistedEd25519PublicKey,
+        r: Scalar,
+    ) -> TwistedElGamalCiphertext {
         let g = RISTRETTO_BASEPOINT_POINT;
         let h = h_ristretto();
         let c = r * g + value * h;
@@ -73,7 +84,7 @@ impl TwistedElGamal {
     pub fn decrypt_with_pk(
         ciphertext: &TwistedElGamalCiphertext,
         private_key: &TwistedEd25519PrivateKey,
-) -> RistrettoPoint {
+    ) -> RistrettoPoint {
         // shared_secret = dk * C - but we actually compute the value point:
         // C = r*G + v*H, D = r*PK
         // dk * C - dk * r*G ... no
@@ -103,11 +114,17 @@ impl TwistedElGamal {
         // For chunked amounts where v fits in 64 bits, this is feasible.
     }
     /// Homomorphic addition of two ciphertexts.
-    pub fn add(a: &TwistedElGamalCiphertext, b: &TwistedElGamalCiphertext) -> TwistedElGamalCiphertext {
+    pub fn add(
+        a: &TwistedElGamalCiphertext,
+        b: &TwistedElGamalCiphertext,
+    ) -> TwistedElGamalCiphertext {
         TwistedElGamalCiphertext::new(a.c + b.c, a.d + b.d)
     }
     /// Homomorphic subtraction of two ciphertexts.
-    pub fn sub(a: &TwistedElGamalCiphertext, b: &TwistedElGamalCiphertext) -> TwistedElGamalCiphertext {
+    pub fn sub(
+        a: &TwistedElGamalCiphertext,
+        b: &TwistedElGamalCiphertext,
+    ) -> TwistedElGamalCiphertext {
         TwistedElGamalCiphertext::new(a.c - b.c, a.d - b.d)
     }
     // Re-encrypt a ciphertext under a new public key (for key rotation).
@@ -128,4 +145,3 @@ impl TwistedElGamal {
     // It creates new randomness and re-encrypts from the decrypted value.
     // See confidential_key_rotation.ts for the actual logic.
 }
-

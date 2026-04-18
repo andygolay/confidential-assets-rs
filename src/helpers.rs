@@ -1,8 +1,8 @@
 // Copyright © Move Industries
 // SPDX-License-Identifier: Apache-2.0
 
-use sha2::{Sha512, Digest};
 use curve25519_dalek::scalar::Scalar;
+use sha2::{Digest, Sha512};
 
 /// Generate Fiat-Shamir challenge using SHA2-512 with raw concatenation.
 /// @deprecated Use fiat_shamir_challenge from crypto::fiat_shamir instead.

@@ -8,21 +8,22 @@
 //!
 //! TODO: Switch `aptos_sdk` types → `movement_sdk` types once the fork is ready.
 
-use aptos_sdk::{
-    Aptos, AptosError,
-    transaction::{EntryFunction, payload::TransactionPayload},
-    types::{AccountAddress, TypeTag},
+use super::view_functions::{
+    get_balance, get_chain_id_byte_for_proofs, get_encryption_key,
+    get_global_auditor_encryption_key, is_balance_normalized, is_pending_balance_frozen,
 };
-use crate::crypto::{
-    TwistedEd25519PrivateKey, TwistedEd25519PublicKey,
-    ConfidentialWithdraw, ConfidentialTransfer, ConfidentialKeyRotation,
-    ConfidentialNormalization,
+use crate::consts::{
+    DEFAULT_CONFIDENTIAL_COIN_MODULE_ADDRESS, MAX_SENDER_AUDITOR_HINT_BYTES, MODULE_NAME,
 };
 use crate::crypto::confidential_registration::gen_registration_proof;
-use crate::consts::{DEFAULT_CONFIDENTIAL_COIN_MODULE_ADDRESS, MODULE_NAME, MAX_SENDER_AUDITOR_HINT_BYTES};
-use super::view_functions::{
-    get_balance, get_encryption_key, get_global_auditor_encryption_key,
-    is_pending_balance_frozen, is_balance_normalized, get_chain_id_byte_for_proofs,
+use crate::crypto::{
+    ConfidentialKeyRotation, ConfidentialNormalization, ConfidentialTransfer, ConfidentialWithdraw,
+    TwistedEd25519PrivateKey, TwistedEd25519PublicKey,
+};
+use aptos_sdk::{
+    transaction::{payload::TransactionPayload, EntryFunction},
+    types::{AccountAddress, TypeTag},
+    Aptos, AptosError,
 };
 
 /// Helper: BCS-encode an AccountAddress.
@@ -79,10 +80,7 @@ impl<'a> ConfidentialAssetTransactionBuilder<'a> {
         let public_key_bytes = decryption_key.public_key().to_bytes();
 
         Ok(EntryFunction::new(
-            aptos_sdk::types::MoveModuleId::new(
-                contract_address,
-                MODULE_NAME.to_string().into(),
-            ),
+            aptos_sdk::types::MoveModuleId::new(contract_address, MODULE_NAME.to_string().into()),
             "register",
             vec![],
             vec![
@@ -91,7 +89,8 @@ impl<'a> ConfidentialAssetTransactionBuilder<'a> {
                 proof.commitment.to_vec(),
                 proof.response.to_vec(),
             ],
-        ).into())
+        )
+        .into())
     }
 
     /// Build a `deposit_to` entry function payload.
@@ -113,7 +112,8 @@ impl<'a> ConfidentialAssetTransactionBuilder<'a> {
                 bcs_addr(&recipient_addr),
                 bcs::to_bytes(&amount).unwrap_or_default(),
             ],
-        ).into())
+        )
+        .into())
     }
 
     /// Build a `withdraw_to` entry function payload.
@@ -135,7 +135,8 @@ impl<'a> ConfidentialAssetTransactionBuilder<'a> {
             token_address,
             sender_decryption_key,
             Some(&self.confidential_asset_module_address),
-        ).await?;
+        )
+        .await?;
 
         let chain_id = get_chain_id_byte_for_proofs(self.client).await?;
         let contract_address = parse_module_address(&self.confidential_asset_module_address);
@@ -150,7 +151,8 @@ impl<'a> ConfidentialAssetTransactionBuilder<'a> {
             &token_bytes,
         );
 
-        let (proofs, encrypted_amount_after_withdraw) = confidential_withdraw.authorize_withdrawal();
+        let (proofs, encrypted_amount_after_withdraw) =
+            confidential_withdraw.authorize_withdrawal();
 
         let recipient_addr = recipient.copied().unwrap_or(*sender);
         let module_addr = parse_module_address(&self.confidential_asset_module_address);
@@ -167,7 +169,8 @@ impl<'a> ConfidentialAssetTransactionBuilder<'a> {
                 proofs.range_proof,
                 ConfidentialWithdraw::serialize_sigma_proof(&proofs.sigma_proof),
             ],
-        ).into())
+        )
+        .into())
     }
 
     /// Build a `rollover_pending_balance` (or `rollover_pending_balance_and_freeze`) entry function payload.
@@ -184,7 +187,8 @@ impl<'a> ConfidentialAssetTransactionBuilder<'a> {
                 sender,
                 token_address,
                 Some(&self.confidential_asset_module_address),
-            ).await?;
+            )
+            .await?;
             if !is_norm {
                 return Err(AptosError::unexpected_response(
                     "Balance must be normalized before rollover",
@@ -205,7 +209,8 @@ impl<'a> ConfidentialAssetTransactionBuilder<'a> {
             function_name,
             vec![],
             vec![bcs_addr(token_address)],
-        ).into())
+        )
+        .into())
     }
 
     /// Build a `confidential_transfer` entry function payload.
@@ -220,9 +225,10 @@ impl<'a> ConfidentialAssetTransactionBuilder<'a> {
         sender_auditor_hint: &[u8],
     ) -> Result<TransactionPayload, AptosError> {
         if sender_auditor_hint.len() > MAX_SENDER_AUDITOR_HINT_BYTES {
-            return Err(AptosError::unexpected_response(
-                format!("senderAuditorHint exceeds MAX_SENDER_AUDITOR_HINT_BYTES ({})", MAX_SENDER_AUDITOR_HINT_BYTES),
-            ));
+            return Err(AptosError::unexpected_response(format!(
+                "senderAuditorHint exceeds MAX_SENDER_AUDITOR_HINT_BYTES ({})",
+                MAX_SENDER_AUDITOR_HINT_BYTES
+            )));
         }
 
         let sender_bytes = sender.into_bytes();
@@ -235,7 +241,8 @@ impl<'a> ConfidentialAssetTransactionBuilder<'a> {
             self.client,
             token_address,
             Some(&self.confidential_asset_module_address),
-        ).await?;
+        )
+        .await?;
 
         // Determine recipient encryption key
         let recipient_encryption_key = if sender == recipient {
@@ -246,7 +253,8 @@ impl<'a> ConfidentialAssetTransactionBuilder<'a> {
                 recipient,
                 token_address,
                 Some(&self.confidential_asset_module_address),
-            ).await?
+            )
+            .await?
         };
 
         // Check if recipient balance is frozen
@@ -255,9 +263,12 @@ impl<'a> ConfidentialAssetTransactionBuilder<'a> {
             recipient,
             token_address,
             Some(&self.confidential_asset_module_address),
-        ).await?;
+        )
+        .await?;
         if is_frozen {
-            return Err(AptosError::unexpected_response("Recipient balance is frozen"));
+            return Err(AptosError::unexpected_response(
+                "Recipient balance is frozen",
+            ));
         }
 
         // Get sender's available balance
@@ -267,7 +278,8 @@ impl<'a> ConfidentialAssetTransactionBuilder<'a> {
             token_address,
             sender_decryption_key,
             Some(&self.confidential_asset_module_address),
-        ).await?;
+        )
+        .await?;
 
         let contract_address = parse_module_address(&self.confidential_asset_module_address);
 
@@ -291,14 +303,20 @@ impl<'a> ConfidentialAssetTransactionBuilder<'a> {
             sender_auditor_hint,
         );
 
-        let (proofs, encrypted_amount_after_transfer, encrypted_amount_by_recipient, auditors_cb_list) =
-            confidential_transfer.authorize_transfer();
+        let (
+            proofs,
+            encrypted_amount_after_transfer,
+            encrypted_amount_by_recipient,
+            auditors_cb_list,
+        ) = confidential_transfer.authorize_transfer();
 
         // Concatenate auditor keys and balances
-        let auditor_encryption_keys_bytes: Vec<u8> = auditor_keys.iter()
+        let auditor_encryption_keys_bytes: Vec<u8> = auditor_keys
+            .iter()
             .flat_map(|k| k.to_bytes().to_vec())
             .collect();
-        let auditor_balances_bytes: Vec<u8> = auditors_cb_list.iter()
+        let auditor_balances_bytes: Vec<u8> = auditors_cb_list
+            .iter()
             .flat_map(|cb| cb.get_ciphertext_bytes())
             .collect();
 
@@ -312,7 +330,9 @@ impl<'a> ConfidentialAssetTransactionBuilder<'a> {
                 bcs_addr(token_address),
                 bcs_addr(recipient),
                 encrypted_amount_after_transfer.get_ciphertext_bytes(),
-                confidential_transfer.transfer_amount_encrypted_by_sender().get_ciphertext_bytes(),
+                confidential_transfer
+                    .transfer_amount_encrypted_by_sender()
+                    .get_ciphertext_bytes(),
                 encrypted_amount_by_recipient.get_ciphertext_bytes(),
                 auditor_encryption_keys_bytes,
                 auditor_balances_bytes,
@@ -321,7 +341,8 @@ impl<'a> ConfidentialAssetTransactionBuilder<'a> {
                 ConfidentialTransfer::serialize_sigma_proof(&proofs.sigma_proof),
                 sender_auditor_hint.to_vec(),
             ],
-        ).into())
+        )
+        .into())
     }
 
     /// Build a `rotate_encryption_key` (or `rotate_encryption_key_and_unfreeze`) entry function payload.
@@ -340,7 +361,8 @@ impl<'a> ConfidentialAssetTransactionBuilder<'a> {
             sender,
             token_address,
             Some(&self.confidential_asset_module_address),
-        ).await?;
+        )
+        .await?;
 
         let balance = get_balance(
             self.client,
@@ -348,7 +370,8 @@ impl<'a> ConfidentialAssetTransactionBuilder<'a> {
             token_address,
             sender_decryption_key,
             Some(&self.confidential_asset_module_address),
-        ).await?;
+        )
+        .await?;
 
         if check_pending_balance_empty && balance.pending_balance() > 0 {
             return Err(AptosError::unexpected_response(
@@ -392,7 +415,8 @@ impl<'a> ConfidentialAssetTransactionBuilder<'a> {
                 proofs.range_proof,
                 ConfidentialKeyRotation::serialize_sigma_proof(&proofs.sigma_proof),
             ],
-        ).into())
+        )
+        .into())
     }
 
     /// Build a `normalize_balance` entry function payload.
@@ -410,7 +434,8 @@ impl<'a> ConfidentialAssetTransactionBuilder<'a> {
             token_address,
             sender_decryption_key,
             Some(&self.confidential_asset_module_address),
-        ).await?;
+        )
+        .await?;
 
         let sender_bytes = sender.into_bytes();
         let token_bytes = token_address.into_bytes();

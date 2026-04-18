@@ -1,16 +1,16 @@
 // Copyright © Move Industries
 // SPDX-License-Identifier: Apache-2.0
-use curve25519_dalek::ristretto::RistrettoPoint;
-use curve25519_dalek::scalar::Scalar;
-use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
-use crate::crypto::twisted_ed25519::{TwistedEd25519PrivateKey, TwistedEd25519PublicKey};
-use crate::crypto::twisted_el_gamal::{TwistedElGamal, TwistedElGamalCiphertext};
-use crate::crypto::encrypted_amount::EncryptedAmount;
+use crate::consts::PROTOCOL_ID_WITHDRAWAL;
 use crate::crypto::chunked_amount::{ChunkedAmount, AVAILABLE_BALANCE_CHUNK_COUNT};
+use crate::crypto::encrypted_amount::EncryptedAmount;
 use crate::crypto::fiat_shamir::fiat_shamir_challenge_full;
 use crate::crypto::h_ristretto;
-use crate::consts::PROTOCOL_ID_WITHDRAWAL;
+use crate::crypto::twisted_ed25519::{TwistedEd25519PrivateKey, TwistedEd25519PublicKey};
+use crate::crypto::twisted_el_gamal::{TwistedElGamal, TwistedElGamalCiphertext};
 use crate::utils::ed25519_gen_random;
+use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
+use curve25519_dalek::ristretto::RistrettoPoint;
+use curve25519_dalek::scalar::Scalar;
 /// Withdrawal sigma proof components.
 #[derive(Clone, Debug)]
 pub struct WithdrawSigmaProof {
@@ -86,7 +86,7 @@ impl ConfidentialWithdraw {
         }
         let pk = decryption_key.public_key();
         let new_balance = sender_balance_amount - amount;
-// Build EncryptedAmount for current balance
+        // Build EncryptedAmount for current balance
         let current_chunked = ChunkedAmount::from_amount(sender_balance_amount);
         let current_ea = EncryptedAmount::new(current_chunked.clone(), pk.clone());
         // Build EncryptedAmount for new balance
@@ -110,20 +110,32 @@ impl ConfidentialWithdraw {
         let dk = self.decryption_key.as_scalar();
         let pk = self.decryption_key.public_key();
         // Generate random nonces for each chunk
-        let current_chunks = self.sender_encrypted_available_balance.chunked_amount().to_scalars();
-        let new_chunks = self.sender_encrypted_available_balance_after_withdrawal.chunked_amount().to_scalars();
+        let current_chunks = self
+            .sender_encrypted_available_balance
+            .chunked_amount()
+            .to_scalars();
+        let new_chunks = self
+            .sender_encrypted_available_balance_after_withdrawal
+            .chunked_amount()
+            .to_scalars();
         let n = current_chunks.len();
         let k_alpha: Vec<Scalar> = (0..n).map(|_| ed25519_gen_random()).collect();
         let k_x: Vec<Scalar> = (0..n).map(|_| ed25519_gen_random()).collect();
         let k_a = ed25519_gen_random();
         let k_t = ed25519_gen_random();
         // Commitments
-        let alpha_list: Vec<RistrettoPoint> = k_alpha.iter()
+        let alpha_list: Vec<RistrettoPoint> = k_alpha
+            .iter()
             .zip(self.sender_encrypted_available_balance.randomness().iter())
             .map(|(k, r)| k * g + r * pk.as_point())
             .collect();
-        let x_list: Vec<RistrettoPoint> = k_x.iter()
-            .zip(self.sender_encrypted_available_balance_after_withdrawal.randomness().iter())
+        let x_list: Vec<RistrettoPoint> = k_x
+            .iter()
+            .zip(
+                self.sender_encrypted_available_balance_after_withdrawal
+                    .randomness()
+                    .iter(),
+            )
             .map(|(k, r)| k * g + r * pk.as_point())
             .collect();
         // Aggregate commitment: A = k_a * G
@@ -150,11 +162,13 @@ impl ConfidentialWithdraw {
             &[&transcript_data],
         );
         // Responses
-        let s_alpha_list: Vec<Scalar> = k_alpha.into_iter()
+        let s_alpha_list: Vec<Scalar> = k_alpha
+            .into_iter()
             .zip(current_chunks.iter())
             .map(|(k, v)| k - c * v)
             .collect();
-        let s_x_list: Vec<Scalar> = k_x.into_iter()
+        let s_x_list: Vec<Scalar> = k_x
+            .into_iter()
             .zip(new_chunks.iter())
             .map(|(k, v)| k - c * v)
             .collect();
@@ -179,7 +193,7 @@ impl ConfidentialWithdraw {
         proof: &WithdrawSigmaProof,
         chain_id: u8,
         sender_address: &[u8],
-contract_address: &[u8],
+        contract_address: &[u8],
         token_address: &[u8],
     ) -> bool {
         // Verification logic: recompute commitments and check
@@ -225,9 +239,15 @@ contract_address: &[u8],
     /// Generate range proof for the new balance.
     pub async fn gen_range_proof(&self) -> Result<Vec<u8>, String> {
         crate::crypto::range_proof::generate_range_proof(
-            self.sender_encrypted_available_balance_after_withdrawal.get_ciphertext(),
-            &self.sender_encrypted_available_balance_after_withdrawal.chunked_amount().chunks().to_vec(),
-            self.sender_encrypted_available_balance_after_withdrawal.randomness(),
+            self.sender_encrypted_available_balance_after_withdrawal
+                .get_ciphertext(),
+            &self
+                .sender_encrypted_available_balance_after_withdrawal
+                .chunked_amount()
+                .chunks()
+                .to_vec(),
+            self.sender_encrypted_available_balance_after_withdrawal
+                .randomness(),
         )
     }
     /// Verify range proof.
@@ -266,15 +286,21 @@ contract_address: &[u8],
     pub fn sender_encrypted_available_balance(&self) -> &EncryptedAmount {
         &self.sender_encrypted_available_balance
     }
-/// Get sender's encrypted available balance after withdrawal.
+    /// Get sender's encrypted available balance after withdrawal.
     pub fn sender_encrypted_available_balance_after_withdrawal(&self) -> &EncryptedAmount {
         &self.sender_encrypted_available_balance_after_withdrawal
     }
     /// Authorize withdrawal: returns (sigma_proof, range_proof, new_encrypted_balance).
-    pub async fn authorize_withdrawal(&self) -> Result<(WithdrawSigmaProof, Vec<u8>, EncryptedAmount), String> {
+    pub async fn authorize_withdrawal(
+        &self,
+    ) -> Result<(WithdrawSigmaProof, Vec<u8>, EncryptedAmount), String> {
         let sigma = self.gen_sigma_proof();
         let range = self.gen_range_proof().await?;
-        Ok((sigma, range, self.sender_encrypted_available_balance_after_withdrawal.clone()))
+        Ok((
+            sigma,
+            range,
+            self.sender_encrypted_available_balance_after_withdrawal
+                .clone(),
+        ))
     }
 }
-
