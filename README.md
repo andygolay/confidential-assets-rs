@@ -1,6 +1,6 @@
 # confidential-assets-rs
 
-Rust SDK for [Movement Network](https://movementnetwork.xyz) confidential asset operations on MoveVM.
+Rust SDK for [Movement Network](https://movementnetwork.xyz) Confidential Asset operations.
 
 ## Features
 
