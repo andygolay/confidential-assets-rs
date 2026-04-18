@@ -25,12 +25,12 @@ pub struct ConfidentialBalance {
 
 impl ConfidentialBalance {
     /// Get the decrypted available balance amount.
-    pub fn available_balance(&self) -> u64 {
+    pub fn available_balance(&self) -> u128 {
         self.available.get_amount()
     }
 
     /// Get the decrypted pending balance amount.
-    pub fn pending_balance(&self) -> u64 {
+    pub fn pending_balance(&self) -> u128 {
         self.pending.get_amount()
     }
 
@@ -70,17 +70,12 @@ pub async fn get_balance(
     let mod_addr = module_address.unwrap_or(DEFAULT_CONFIDENTIAL_COIN_MODULE_ADDRESS);
 
     // Fetch pending and available balances in parallel
+    let pending_fn = func_path(mod_addr, "pending_balance");
+    let actual_fn = func_path(mod_addr, "actual_balance");
+    let args = vec![bcs_address(account_address), bcs_address(token_address)];
     let (pending_result, available_result) = tokio::join!(
-        client.view_bcs_raw(
-            &func_path(mod_addr, "pending_balance"),
-            vec![],
-            vec![bcs_address(account_address), bcs_address(token_address)],
-        ),
-        client.view_bcs_raw(
-            &func_path(mod_addr, "actual_balance"),
-            vec![],
-            vec![bcs_address(account_address), bcs_address(token_address)],
-        ),
+        client.view_bcs_raw(&pending_fn, vec![], args.clone()),
+        client.view_bcs_raw(&actual_fn, vec![], args),
     );
 
     let pending_bytes = pending_result?;
@@ -201,7 +196,7 @@ pub async fn get_global_auditor_encryption_key(
     match result {
         Some(bytes) if !bytes.is_empty() => {
             match {
-                let arr: [u8; 32] = bytes.try_into().map_err(|_| "not 32 bytes")?;
+                let arr: [u8; 32] = bytes.try_into().map_err(|_| AptosError::Internal("auditor key not 32 bytes".to_string()))?;
                 TwistedEd25519PublicKey::from_bytes(&arr)
             } {
                 Ok(key) => Ok(Some(key)),
@@ -238,12 +233,13 @@ fn deserialize_ciphertext_chunks(
     let mut ciphertexts = Vec::new();
     for chunk in bytes.chunks_exact(64) {
         use curve25519_dalek::ristretto::RistrettoPoint;
-        let mut left_bytes = [0u8; 32];
-        let mut right_bytes = [0u8; 32];
-        left_bytes.copy_from_slice(&chunk[..32]);
-        right_bytes.copy_from_slice(&chunk[32..]);
-        let left = RistrettoPoint::from_uniform_bytes(&left_bytes);
-        let right = RistrettoPoint::from_uniform_bytes(&right_bytes);
+        use curve25519_dalek::ristretto::CompressedRistretto;
+        let left = CompressedRistretto::from_slice(&chunk[..32])
+            .decompress()
+            .ok_or_else(|| AptosError::Internal("invalid left point in ciphertext".to_string()))?;
+        let right = CompressedRistretto::from_slice(&chunk[32..])
+            .decompress()
+            .ok_or_else(|| AptosError::Internal("invalid right point in ciphertext".to_string()))?;
         ciphertexts.push(TwistedElGamalCiphertext::new(left, right));
     }
     Ok(ciphertexts)
